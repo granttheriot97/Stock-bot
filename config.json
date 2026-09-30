@@ -1,0 +1,15 @@
+{
+  "starting_cash": 100.0,
+  "base_order_shares": 2.0,
+  "max_unmatched_shares": 12.0,
+  "max_total_inventory": 40.0,
+  "pair_edge_required": 0.012,
+  "inventory_skew_per_share": 0.0008,
+  "max_quote_skew": 0.025,
+  "max_market_spread": 0.08,
+  "volatility_pause": 0.035,
+  "max_drawdown_fraction": 0.12,
+  "stale_seconds": 3.0,
+  "maker_rebate_per_dollar": 0.0,
+  "modeled_cost_per_share": 0.001
+}
