@@ -106,7 +106,7 @@ def probe():
    if pair is not None and (p["best_pair_cost"] is None or pair<p["best_pair_cost"]):p["best_pair_cost"]=pair
    if edge is not None and (p["best_gross_edge"] is None or edge>p["best_gross_edge"]):p["best_gross_edge"]=edge
    if target["slug"] not in p["markets_seen"]:p["markets_seen"]=(p["markets_seen"]+[target["slug"]])[-20:]
-   decision_ts=time.time();sm=re.search(r"(\\d{4}-\\d{2}-\\d{2})-(\\d{4})z",target["slug"]);market_elapsed=None
+   decision_ts=time.time();sm=re.search(r"(\d{4}-\d{2}-\d{2})-(\d{4})z",target["slug"]);market_elapsed=None
    if sm:
     try:market_elapsed=round(decision_ts-datetime.datetime.strptime(sm.group(1)+sm.group(2),"%Y-%m-%d%H%M").replace(tzinfo=datetime.timezone.utc).timestamp(),1)
     except:pass
