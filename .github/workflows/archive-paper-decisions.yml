@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch and append unseen decisions
+      - name: Fetch decisions and health checkpoint
         run: |
           python - <<'PY'
           import json, urllib.request, pathlib, datetime
@@ -20,7 +20,8 @@ jobs:
                   s=json.load(r)
           except Exception as e:
               print("fetch failed:", e); raise SystemExit(0)
-          events=(s.get("paper") or {}).get("decision_log") or []
+          paper=s.get("paper") or {}
+          events=paper.get("decision_log") or []
           p=pathlib.Path("paper_history/decisions.jsonl")
           old=p.read_text().splitlines() if p.exists() else []
           seen=set()
@@ -32,20 +33,29 @@ jobs:
           for x in events:
               k=(x.get("ts"),x.get("slug"),x.get("pair_cost"),x.get("result"))
               if k not in seen:
-                  new.append(json.dumps(x,separators=(",",":")))
-                  seen.add(k)
+                  new.append(json.dumps(x,separators=(",",":")));seen.add(k)
           if new:
               p.parent.mkdir(exist_ok=True)
               with p.open("a") as f:
                   for line in new:f.write(line+"\n")
-              print("appended",len(new),"decisions")
-          else: print("no new decisions")
+          now=datetime.datetime.now(datetime.timezone.utc).isoformat()
+          checkpoint={
+            "archived_at":now,"engine_started_at":s.get("started_at"),"last_update":s.get("last_update"),
+            "status":s.get("status"),"health":s.get("health") or {},
+            "session":{"observations":paper.get("observations",0),"opportunities":paper.get("opportunities",0),
+            "confirmed_orders":paper.get("confirmed_orders",0),"unfilled_orders":paper.get("unfilled_orders",0),
+            "realized_pnl":paper.get("realized_pnl",0),"markets_seen":paper.get("markets_seen") or []},
+            "archive":{"new_decisions_this_run":len(new),"total_decision_lines":len(old)+len(new)}
+          }
+          pathlib.Path("paper_history/checkpoint.json").write_text(json.dumps(checkpoint,indent=2)+"\n")
+          print("archived",len(new),"new decisions; checkpoint updated")
           PY
       - name: Commit archive
         run: |
-          if git diff --quiet -- paper_history/decisions.jsonl; then exit 0; fi
+          if git diff --quiet -- paper_history; then exit 0; fi
           git config user.name "b27b-paper-archiver"
           git config user.email "actions@users.noreply.github.com"
-          git add paper_history/decisions.jsonl
-          git commit -m "Archive B27B paper decisions"
+          git add paper_history
+          git commit -m "Archive B27B paper test checkpoint"
+          git pull --rebase origin main
           git push
