@@ -17,7 +17,8 @@ def supabase_write(table,row,prefer="return=minimal"):
   req=urllib.request.Request(SUPABASE_URL+"/rest/v1/"+table,data=data,method="POST",headers={"apikey":SUPABASE_SECRET_KEY,"Authorization":"Bearer "+SUPABASE_SECRET_KEY,"Content-Type":"application/json","Prefer":prefer})
   with urllib.request.urlopen(req,timeout=4) as r:return 200<=r.status<300
  except Exception as e:
-  STATE["supabase"]={"configured":bool(SUPABASE_URL and SUPABASE_SECRET_KEY),"url_configured":bool(SUPABASE_URL),"secret_configured":bool(SUPABASE_SECRET_KEY),"connected":False,"last_success":STATE.get("supabase",{}).get("last_success"),"last_error":repr(e)[:240],"last_attempt":time.time()}\n  print(json.dumps({"supabase_write_error":{"table":table,"error":repr(e)[:240]}}),flush=True)
+  STATE["supabase"]={"configured":bool(SUPABASE_URL and SUPABASE_SECRET_KEY),"url_configured":bool(SUPABASE_URL),"secret_configured":bool(SUPABASE_SECRET_KEY),"connected":False,"last_success":STATE.get("supabase",{}).get("last_success"),"last_error":repr(e)[:240],"last_attempt":time.time()}
+  print(json.dumps({"supabase_write_error":{"table":table,"error":repr(e)[:240]}}),flush=True)
   return False
 def archive_decision(d):
  row={"observed_at":datetime.datetime.fromtimestamp(d["ts"],datetime.timezone.utc).isoformat(),"strategy_version":d.get("strategy_version") or STRATEGY_VERSION,"git_commit":d.get("git_commit"),"market_slug":d.get("slug"),"duration":d.get("duration"),"seconds_into_market":d.get("seconds_into_market"),"long_quote":d.get("long_quote"),"short_quote":d.get("short_quote"),"quote_imbalance":d.get("quote_imbalance"),"pair_cost":d.get("pair_cost"),"gross_pair_edge":d.get("gross_pair_edge"),"threshold":d.get("threshold"),"result":d.get("result"),"reason":d.get("reason"),"source_restart_id":STATE["health"].get("restart_id")}
