@@ -266,3 +266,4 @@
 {"ts":1790832976.8438659,"slug":"cpc-btc-updown-15m-2026-10-01-0530z","long_quote":0.58,"short_quote":0.43,"pair_cost":1.01,"gross_pair_edge":-0.01,"threshold":0.01,"result":"rejected","reason":"gross pair edge below threshold"}
 {"ts":1790832986.8818924,"slug":"cpc-btc-updown-15m-2026-10-01-0530z","long_quote":0.56,"short_quote":0.45,"pair_cost":1.01,"gross_pair_edge":-0.01,"threshold":0.01,"result":"rejected","reason":"gross pair edge below threshold"}
 {"ts":1790832996.9032161,"slug":"cpc-btc-updown-15m-2026-10-01-0530z","long_quote":0.56,"short_quote":0.45,"pair_cost":1.01,"gross_pair_edge":-0.01,"threshold":0.01,"result":"rejected","reason":"gross pair edge below threshold"}
+{"ts":1790834084.098722,"slug":"cpc-btc-updown-15m-2026-10-01-0545z","long_quote":0.99,"short_quote":0.02,"pair_cost":1.01,"gross_pair_edge":-0.01,"threshold":0.01,"result":"rejected","reason":"gross pair edge below threshold"}
