@@ -38,6 +38,33 @@ jobs:
               p.parent.mkdir(exist_ok=True)
               with p.open("a") as f:
                   for line in new:f.write(line+"\n")
+          # Persist final paper-order lifecycle records across Render restarts.
+          op=pathlib.Path("paper_history/orders.jsonl")
+          old_orders=op.read_text().splitlines() if op.exists() else []
+          order_seen=set()
+          for line in old_orders:
+              try:
+                  x=json.loads(line); order_seen.add((x.get("order_id"),x.get("status"),x.get("closed_ts") or x.get("created_ts")))
+              except: pass
+          new_orders=[]
+          for x in paper.get("paper_orders") or []:
+              # Pending records are transient; archive completed outcomes only.
+              if x.get("status") not in ("confirmed_fill","unfilled"): continue
+              k=(x.get("order_id"),x.get("status"),x.get("closed_ts") or x.get("created_ts"))
+              if k not in order_seen:
+                  new_orders.append(json.dumps(x,separators=(",",":")));order_seen.add(k)
+          if new_orders:
+              op.parent.mkdir(exist_ok=True)
+              with op.open("a") as f:
+                  for line in new_orders:f.write(line+"\n")
+          # Append health snapshots for uptime / downtime analysis.
+          hp=pathlib.Path("paper_history/health.jsonl")
+          health_row={"archived_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                      "engine_started_at":s.get("started_at"),"last_update":s.get("last_update"),
+                      "status":s.get("status"),"health":s.get("health") or {},
+                      "observations":paper.get("observations",0),"markets_seen":paper.get("markets_seen") or []}
+          hp.parent.mkdir(exist_ok=True)
+          with hp.open("a") as f:f.write(json.dumps(health_row,separators=(",",":"))+"\n")
           now=datetime.datetime.now(datetime.timezone.utc).isoformat()
           checkpoint={
             "archived_at":now,"engine_started_at":s.get("started_at"),"last_update":s.get("last_update"),
@@ -45,7 +72,7 @@ jobs:
             "session":{"observations":paper.get("observations",0),"opportunities":paper.get("opportunities",0),
             "confirmed_orders":paper.get("confirmed_orders",0),"unfilled_orders":paper.get("unfilled_orders",0),
             "realized_pnl":paper.get("realized_pnl",0),"markets_seen":paper.get("markets_seen") or []},
-            "archive":{"new_decisions_this_run":len(new),"total_decision_lines":len(old)+len(new)}
+            "archive":{"new_decisions_this_run":len(new),"total_decision_lines":len(old)+len(new),"new_final_orders_this_run":len(new_orders),"total_final_order_lines":len(old_orders)+len(new_orders)}
           }
           pathlib.Path("paper_history/checkpoint.json").write_text(json.dumps(checkpoint,indent=2)+"\n")
           print("archived",len(new),"new decisions; checkpoint updated")
