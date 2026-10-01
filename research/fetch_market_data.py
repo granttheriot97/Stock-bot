@@ -24,7 +24,7 @@ def fetch(symbol,years=10):
         rows.append([datetime.datetime.fromtimestamp(t,datetime.timezone.utc).date().isoformat(),symbol,o*factor,h*factor,l*factor,ac,v])
     return rows
 def main():
-    p=argparse.ArgumentParser();p.add_argument("--symbols",default=",".join(DEFAULT));p.add_argument("--membership-universe",action="store_true");p.add_argument("--former-plus-default",action="store_true");p.add_argument("--years",type=int,default=10);p.add_argument("--out",default="research/bars.csv");a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument("--symbols",default=",".join(DEFAULT));p.add_argument("--membership-universe",action="store_true");p.add_argument("--former-plus-default",action="store_true");p.add_argument("--years",type=int,default=10);p.add_argument("--out",default="research/bars.csv");p.add_argument("--resume",action="store_true");a=p.parse_args()
     syms=[x.strip().upper() for x in a.symbols.split(",") if x.strip()]
     if a.membership_universe:
         cutoff=(datetime.datetime.now(datetime.timezone.utc).date()-datetime.timedelta(days=int(a.years*365.25))).isoformat()
@@ -42,17 +42,28 @@ def main():
         syms=sorted(former | set(DEFAULT))
         print(f"B27B_FETCH_UNIVERSE mode=former_plus_default symbols={len(syms)} cutoff={cutoff}",flush=True)
     ok=0; failed=0; empty=0
-    with open(a.out,"w",newline="") as h, ThreadPoolExecutor(max_workers=12) as pool:
-        w=csv.writer(h);w.writerow(["timestamp","symbol","open","high","low","close","volume"])
-        futures={pool.submit(fetch,s,a.years):s for s in syms}
+    completed=set()
+    if a.resume and __import__("os").path.exists(a.out):
+        try:
+            with open(a.out,newline="") as existing:
+                completed={r["symbol"].strip().upper() for r in csv.DictReader(existing)}
+        except Exception as e:
+            print("B27B_RESUME_READ_ERROR",repr(e),flush=True)
+    pending=[s for s in syms if s not in completed]
+    mode="a" if a.resume and __import__("os").path.exists(a.out) else "w"
+    print(f"B27B_FETCH_RESUME completed={len(completed)} pending={len(pending)} mode={mode}",flush=True)
+    with open(a.out,mode,newline="") as h, ThreadPoolExecutor(max_workers=12) as pool:
+        w=csv.writer(h)
+        if mode=="w": w.writerow(["timestamp","symbol","open","high","low","close","volume"])
+        futures={pool.submit(fetch,s,a.years):s for s in pending}
         for future in as_completed(futures):
             s=futures[future]
             try:
-                rows=future.result();w.writerows(rows)
+                rows=future.result();w.writerows(rows);h.flush()
                 if rows: ok+=1
                 else: empty+=1
                 print(s,len(rows),flush=True)
             except Exception as e:
                 failed+=1;print(s,"ERROR",repr(e),flush=True)
-    print(f"B27B_FETCH_COVERAGE requested={len(syms)} nonempty={ok} empty={empty} failed={failed} coverage={(ok/len(syms) if syms else 0):.4f}",flush=True)
+    print(f"B27B_FETCH_COVERAGE requested={len(syms)} resumed={len(completed)} newly_nonempty={ok} empty={empty} failed={failed} completed_total={len(completed)+ok} coverage={((len(completed)+ok)/len(syms) if syms else 0):.4f}",flush=True)
 if __name__=="__main__":main()
