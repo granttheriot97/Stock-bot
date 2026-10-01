@@ -9,8 +9,8 @@ def run():
         S["output"]=p.stdout[-200000:];S["error"]=p.stderr[-20000:] or None
         S["status"]="complete" if p.returncode==0 else "failed";S["returncode"]=p.returncode
         lines=[x for x in p.stdout.splitlines() if x.strip()]
-        results=[x for x in lines if "," in x and not x.startswith("symbol,")]
         diagnostics=[x for x in lines if x.startswith("B27B_")]
+        results=[x for x in lines if "," in x and not x.startswith("symbol,") and not x.startswith("B27B_")]
         passes=[x for x in results if x.rstrip().endswith(",True")]
         print("B27B_RESEARCH_STATUS",S["status"],"ROWS",len(results),"PASSES",len(passes),flush=True)
         print("B27B_PASSING_RESULTS_BEGIN",flush=True)
