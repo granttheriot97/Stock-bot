@@ -23,12 +23,26 @@ def fetch(symbol,years=10):
         rows.append([datetime.datetime.fromtimestamp(t,datetime.timezone.utc).date().isoformat(),symbol,o*factor,h*factor,l*factor,ac,v])
     return rows
 def main():
-    p=argparse.ArgumentParser();p.add_argument("--symbols",default=",".join(DEFAULT));p.add_argument("--years",type=int,default=10);p.add_argument("--out",default="research/bars.csv");a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument("--symbols",default=",".join(DEFAULT));p.add_argument("--membership-universe",action="store_true");p.add_argument("--years",type=int,default=10);p.add_argument("--out",default="research/bars.csv");a=p.parse_args()
     syms=[x.strip().upper() for x in a.symbols.split(",") if x.strip()]
+    if a.membership_universe:
+        cutoff=(datetime.datetime.now(datetime.timezone.utc).date()-datetime.timedelta(days=int(a.years*365.25))).isoformat()
+        with open("research/data/sp500_ticker_start_end.csv",newline="") as mh:
+            mr=list(csv.DictReader(mh))
+        hist={r["ticker"].strip().upper() for r in mr if r["start_date"] <= datetime.datetime.now(datetime.timezone.utc).date().isoformat() and (not r["end_date"] or r["end_date"] >= cutoff)}
+        syms=sorted(hist | {"SPY"})
+        print(f"B27B_FETCH_UNIVERSE symbols={len(syms)} cutoff={cutoff}",flush=True)
+    ok=0; failed=0; empty=0
     with open(a.out,"w",newline="") as h:
         w=csv.writer(h);w.writerow(["timestamp","symbol","open","high","low","close","volume"])
         for n,s in enumerate(syms):
-            try: rows=fetch(s,a.years);w.writerows(rows);print(s,len(rows),flush=True)
-            except Exception as e:print(s,"ERROR",repr(e),flush=True)
-            if n+1<len(syms):time.sleep(1)
+            try:
+                rows=fetch(s,a.years);w.writerows(rows)
+                if rows: ok+=1
+                else: empty+=1
+                print(s,len(rows),flush=True)
+            except Exception as e:
+                failed+=1;print(s,"ERROR",repr(e),flush=True)
+            if n+1<len(syms):time.sleep(0.15)
+    print(f"B27B_FETCH_COVERAGE requested={len(syms)} nonempty={ok} empty={empty} failed={failed} coverage={(ok/len(syms) if syms else 0):.4f}",flush=True)
 if __name__=="__main__":main()
