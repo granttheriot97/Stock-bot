@@ -28,8 +28,9 @@ def probe():
  while True:
   try:
    if target is None:
-    ranked=choose(obj(c.search.query({"query":"bitcoin"})))
-    if not ranked:raise RuntimeError("No Bitcoin markets returned by public search")
+    ranked=choose(obj(c.search.query({"query":"bitcoin up down"})))
+    if not ranked: ranked=choose(obj(c.search.query({"query":"bitcoin"})))
+    if not ranked:raise RuntimeError("No active short-duration BTC UP/DOWN candidate found; refusing to substitute an unrelated BTC market")
     # Only touch one candidate per cycle. Never fan out across the search result.
     score,slug,title=ranked[0];target={"slug":slug,"title":title,"score":score}
     STATE.update(status="target selected; polling one public market",market={"slug":slug,"title":title},error=None)
