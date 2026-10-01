@@ -2,7 +2,7 @@ import json,os,time,threading,re,datetime
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
 STARTED_AT=time.time()
-STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":10,"backoff_seconds":15,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"note":"observer-first; no fills until execution model is validated"}}
+STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":5,"backoff_seconds":15,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"note":"fast BBO observer; no fills until execution model is validated"}}
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -50,7 +50,7 @@ def probe():
     score,slug,title=live[0];target={"slug":slug,"title":title,"score":score}
     STATE.update(status="target selected; polling one public market",market={"slug":slug,"title":title},error=None)
     print(json.dumps({"target_selected":target}),flush=True);time.sleep(5)
-   bbo=obj(c.markets.bbo(target["slug"]));time.sleep(2);book=obj(c.markets.book(target["slug"]))
+   bbo=obj(c.markets.bbo(target["slug"]))
    md=(bbo.get("marketData",{}) if isinstance(bbo,dict) else {})
    longq=float((md.get("longQuote") or {}).get("value",0) or 0);shortq=float((md.get("shortQuote") or {}).get("value",0) or 0)
    pair=round(longq+shortq,4) if longq and shortq else None;edge=round(1-pair,4) if pair is not None else None
@@ -71,7 +71,7 @@ def probe():
    backoff=15
    if not active_slug(target["slug"]):
     print(json.dumps({"target_rotation":{"expired":target["slug"]}}),flush=True);target=None
-   time.sleep(10)
+   time.sleep(5)
   except Exception as e:
    msg=repr(e);STATE.update(status="rate-limited; backing off" if "429" in msg or "RateLimit" in msg else "probe error; retrying",last_update=time.time(),error=msg,backoff_seconds=backoff)
    print(json.dumps({"public_probe_retry":{"seconds":backoff,"error":msg[:240]}}),flush=True)
