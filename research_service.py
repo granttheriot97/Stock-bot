@@ -1,7 +1,7 @@
 """Free Render-compatible B27B research service. Runs research once at startup and exposes + logs output."""
 import json,os,subprocess,threading,time
 from http.server import BaseHTTPRequestHandler,HTTPServer
-S={"status":"starting","started_at":time.time(),"output":"","error":None}
+S={"status":"starting","started_at":time.time(),"output":"","error":None,"checkpoint":None}
 def run():
     print("B27B_RESEARCH_START",flush=True)
     try:
@@ -27,7 +27,7 @@ def run():
         S.update(status="failed",error=repr(e));print("B27B_RESEARCH_ERROR",repr(e),flush=True)
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
-        b=json.dumps(S).encode();self.send_response(200);self.send_header("Content-Type","application/json");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
+        state=dict(S)\n        try:\n            with open(os.path.join(os.getenv("B27B_STATE_DIR","/tmp/b27b_state"),"manifest.json")) as h: state["checkpoint"]=json.load(h)\n        except Exception: pass\n        b=json.dumps(state).encode();self.send_response(200);self.send_header("Content-Type","application/json");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
     def log_message(self,*a):pass
 threading.Thread(target=run,daemon=True).start()
 HTTPServer(("0.0.0.0",int(os.getenv("PORT","10000"))),H).serve_forever()
