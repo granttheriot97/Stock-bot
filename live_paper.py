@@ -72,12 +72,12 @@ def probe():
    p=STATE["paper"]
    if time.time()-last_book_sample.get(target["slug"],0)>=30:
     try:
-     book=obj(c.markets.book(target["slug"]));bmd=(book.get("marketData",{}) if isinstance(book,dict) else {})
+     bbo_sample_time=time.time();book_request_started=time.time();book=obj(c.markets.book(target["slug"]));book_received=time.time();bmd=(book.get("marketData",{}) if isinstance(book,dict) else {})
      bids=bmd.get("bids") or [];offers=bmd.get("offers") or []
      def level(x):
       if not isinstance(x,dict):return None
       px=x.get("px") or {};return {"price":float(px.get("value",0) or 0),"qty":float(x.get("qty",0) or 0)}
-     snap={"ts":time.time(),"slug":target["slug"],"top_bid":level(bids[0]) if bids else None,"top_offer":level(offers[0]) if offers else None,"bid_levels":len(bids),"offer_levels":len(offers),"transact_time":bmd.get("transactTime"),"bbo_best_bid":float((md.get("bestBid") or {}).get("value",0) or 0),"bbo_best_ask":float((md.get("bestAsk") or {}).get("value",0) or 0),"signal_long_quote":longq,"signal_short_quote":shortq}
+     snap={"ts":time.time(),"slug":target["slug"],"top_bid":level(bids[0]) if bids else None,"top_offer":level(offers[0]) if offers else None,"bid_levels":len(bids),"offer_levels":len(offers),"transact_time":bmd.get("transactTime"),"book_request_ms":round((book_received-book_request_started)*1000,1),"bbo_to_book_ms":round((book_received-bbo_sample_time)*1000,1),"bbo_best_bid":float((md.get("bestBid") or {}).get("value",0) or 0),"bbo_best_ask":float((md.get("bestAsk") or {}).get("value",0) or 0),"signal_long_quote":longq,"signal_short_quote":shortq}
      if snap["top_bid"] and snap["top_offer"]:
       snap["displayed_spread"]=round(snap["top_offer"]["price"]-snap["top_bid"]["price"],4)
       snap["bbo_book_match"]=abs(snap["bbo_best_bid"]-snap["top_bid"]["price"])<0.0001 and abs(snap["bbo_best_ask"]-snap["top_offer"]["price"])<0.0001
