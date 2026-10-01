@@ -2,7 +2,7 @@ import json,os,time,threading,re,datetime
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
 STARTED_AT=time.time()
-STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":10,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"bbo-authoritative-paper-model","paper_fills_enabled":True,"rule":"use documented BBO for conservative paper execution; raw book retained as diagnostic only"},"paper_orders":[],"paper_fills":[],"pending_orders":{},"unfilled_orders":0,"confirmed_orders":0,"max_position_usd":10.0,"modeled_cost_per_share":0.001,"note":"two-step BBO-confirmed paper execution with modeled costs; raw order book diagnostic only; real orders disabled"}}
+STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":10,"backoff_seconds":30,"health":{"restart_id":str(int(STARTED_AT)),"last_success":None,"last_error":None,"consecutive_errors":0,"rate_limit_errors":0,"market_rotations":0},"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"bbo-authoritative-paper-model","paper_fills_enabled":True,"rule":"use documented BBO for conservative paper execution; raw book retained as diagnostic only"},"paper_orders":[],"paper_fills":[],"pending_orders":{},"unfilled_orders":0,"confirmed_orders":0,"max_position_usd":10.0,"modeled_cost_per_share":0.001,"note":"two-step BBO-confirmed paper execution with modeled costs; raw order book diagnostic only; real orders disabled"}}
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -62,7 +62,7 @@ def probe():
     targets=selected[:2];last_discovery=time.time()
     if target is None or not any(x["slug"]==target.get("slug") for x in targets):target=targets[0]
     STATE["active_targets"]=targets
-    STATE.update(status="multi-market BTC observer active",market={"slug":target["slug"],"title":target["title"]},error=None)
+    STATE.update(status="multi-market BTC observer active",market={"slug":target["slug"],"title":target["title"]},error=None);STATE["health"]["market_rotations"]+=1
     print(json.dumps({"targets_selected":targets}),flush=True);time.sleep(2)
    target=targets[STATE["paper"]["observations"]%len(targets)] if targets else target
    bbo=obj(c.markets.bbo(target["slug"]))
@@ -98,7 +98,7 @@ def probe():
      print(json.dumps({"execution_snapshot":snap}),flush=True)
     except Exception as be:
      p["last_execution_snapshot_error"]=repr(be)[:240];last_book_sample[target["slug"]]=time.time()
-   p["observations"]+=1;p["runtime_seconds"]=round(time.time()-STARTED_AT,1);p["observations_per_minute"]=round(p["observations"]/max((time.time()-STARTED_AT)/60,1/60),2);p["last_pair_cost"]=pair;p["last_gross_pair_edge"]=edge
+   p["observations"]+=1;p["runtime_seconds"]=round(time.time()-STARTED_AT,1);p["observations_per_minute"]=round(p["observations"]/max((time.time()-STARTED_AT)/60,1/60),2);STATE["health"]["last_success"]=time.time();STATE["health"]["consecutive_errors"]=0;p["last_pair_cost"]=pair;p["last_gross_pair_edge"]=edge
    if pair is not None and (p["best_pair_cost"] is None or pair<p["best_pair_cost"]):p["best_pair_cost"]=pair
    if edge is not None and (p["best_gross_edge"] is None or edge>p["best_gross_edge"]):p["best_gross_edge"]=edge
    if target["slug"] not in p["markets_seen"]:p["markets_seen"]=(p["markets_seen"]+[target["slug"]])[-20:]
@@ -135,7 +135,7 @@ def probe():
     print(json.dumps({"target_rotation":{"expired":target["slug"]}}),flush=True);targets=[x for x in targets if x["slug"]!=target["slug"]];target=targets[0] if targets else None
    time.sleep(10)
   except Exception as e:
-   msg=repr(e);STATE.update(status="rate-limited; backing off" if "429" in msg or "RateLimit" in msg else "probe error; retrying",last_update=time.time(),error=msg,backoff_seconds=backoff)
+   msg=repr(e);STATE.update(status="rate-limited; backing off" if "429" in msg or "RateLimit" in msg else "probe error; retrying",last_update=time.time(),error=msg,backoff_seconds=backoff);STATE["health"]["last_error"]=time.time();STATE["health"]["consecutive_errors"]+=1;STATE["health"]["rate_limit_errors"]+=(1 if "429" in msg or "RateLimit" in msg else 0)
    print(json.dumps({"public_probe_retry":{"seconds":backoff,"error":msg[:240]}}),flush=True)
    if "404" in msg or "NotFound" in msg:target=None
    time.sleep(backoff);backoff=min(backoff*2,300)
