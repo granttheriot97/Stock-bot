@@ -1,7 +1,7 @@
 """B27B multi-strategy walk-forward research. Paper/research only."""
-import argparse,csv,math
+import argparse,csv,math,os
 from collections import defaultdict
-COST_BPS=5.0;MIN_BARS=600
+COST_BPS=float(os.getenv("B27B_COST_BPS","5"));MIN_BARS=600
 def f(x):
     try:return float(x)
     except:return float("nan")
