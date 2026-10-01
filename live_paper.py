@@ -2,7 +2,7 @@ import json,os,time,threading,re,datetime
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
 STARTED_AT=time.time()
-STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":5,"backoff_seconds":15,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"validating","paper_fills_enabled":False,"rule":"documented BBO bestBid/bestAsk must match raw book top levels before fills"},"note":"fast BBO observer plus periodic order-book execution research; no fills until execution model is validated"}}
+STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":10,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"validating","paper_fills_enabled":False,"rule":"documented BBO bestBid/bestAsk must match raw book top levels before fills"},"note":"fast BBO observer plus periodic order-book execution research; no fills until execution model is validated"}}
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -37,7 +37,7 @@ def active_slug(slug):
  now=datetime.datetime.now(datetime.timezone.utc)
  return start<=now<start+datetime.timedelta(minutes=mins)
 def probe():
- c=PolymarketUS();targets=[];target=None;backoff=15;last_discovery=0;last_book_sample={}
+ c=PolymarketUS();targets=[];target=None;backoff=30;last_discovery=0;last_book_sample={}
  while True:
   try:
    if target is None or time.time()-last_discovery>60:
@@ -76,7 +76,7 @@ def probe():
     targets=[x for x in targets if x["slug"]!=target["slug"]];target=targets[0] if targets else None;time.sleep(2);continue
    pair=round(longq+shortq,4);edge=round(1-pair,4)
    p=STATE["paper"]
-   if time.time()-last_book_sample.get(target["slug"],0)>=30:
+   if time.time()-last_book_sample.get(target["slug"],0)>=60:
     try:
      bbo_sample_time=time.time();book_request_started=time.time();book=obj(c.markets.book(target["slug"]));book_received=time.time();bmd=(book.get("marketData",{}) if isinstance(book,dict) else {});verify_bbo=obj(c.markets.bbo(target["slug"]));vmd=(verify_bbo.get("marketData",{}) if isinstance(verify_bbo,dict) else {})
      bids=bmd.get("bids") or [];offers=bmd.get("offers") or []
@@ -104,12 +104,12 @@ def probe():
     if not p["qualifying_events"] or p["qualifying_events"][-1].get("slug")!=ev["slug"] or p["qualifying_events"][-1].get("pair_cost")!=pair:
      p["qualifying_events"]=(p["qualifying_events"]+[ev])[-50:]
    else:p["rejected"]+=1
-   STATE.update(status="paper opportunity observer active",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"state":md.get("state"),"long_quote":longq,"short_quote":shortq,"pair_cost":pair,"gross_pair_edge":edge},error=None,backoff_seconds=15)
+   STATE.update(status="paper opportunity observer active",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"state":md.get("state"),"long_quote":longq,"short_quote":shortq,"pair_cost":pair,"gross_pair_edge":edge},error=None,backoff_seconds=30)
    print(json.dumps({"paper_tick":{"slug":target["slug"],"pair_cost":pair,"gross_pair_edge":edge,"market_state":md.get("state"),"paper":STATE["paper"]}},default=str),flush=True)
-   backoff=15
+   backoff=30
    if not active_slug(target["slug"]):
     print(json.dumps({"target_rotation":{"expired":target["slug"]}}),flush=True);targets=[x for x in targets if x["slug"]!=target["slug"]];target=targets[0] if targets else None
-   time.sleep(5)
+   time.sleep(10)
   except Exception as e:
    msg=repr(e);STATE.update(status="rate-limited; backing off" if "429" in msg or "RateLimit" in msg else "probe error; retrying",last_update=time.time(),error=msg,backoff_seconds=backoff)
    print(json.dumps({"public_probe_retry":{"seconds":backoff,"error":msg[:240]}}),flush=True)
