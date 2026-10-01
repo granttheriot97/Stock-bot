@@ -5,8 +5,8 @@ STARTED_AT=time.time()
 STRATEGY_VERSION="V1"
 GIT_COMMIT=os.getenv("RENDER_GIT_COMMIT","unknown")
 STATE={"mode":"paper-only","strategy":{"version":STRATEGY_VERSION,"git_commit":GIT_COMMIT,"frozen_threshold":0.01},"started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":10,"backoff_seconds":30,"health":{"restart_id":str(int(STARTED_AT)),"last_success":None,"last_error":None,"consecutive_errors":0,"rate_limit_errors":0,"market_rotations":0},"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"bbo-authoritative-paper-model","paper_fills_enabled":True,"rule":"use documented BBO for conservative paper execution; raw book retained as diagnostic only"},"paper_orders":[],"paper_fills":[],"pending_orders":{},"next_order_id":1,"unfilled_orders":0,"confirmed_orders":0,"max_position_usd":10.0,"modeled_cost_per_share":0.001,"note":"two-step BBO-confirmed paper execution with modeled costs; raw order book diagnostic only; real orders disabled"}}
-SUPABASE_URL=os.getenv("SUPABASE_URL","").rstrip("/")
-SUPABASE_SECRET_KEY=os.getenv("SUPABASE_SECRET_KEY","")
+SUPABASE_URL="".join(os.getenv("SUPABASE_URL","").split()).rstrip("/")
+SUPABASE_SECRET_KEY="".join(os.getenv("SUPABASE_SECRET_KEY","").split())
 STATE["supabase"]={"configured":bool(SUPABASE_URL and SUPABASE_SECRET_KEY),"url_configured":bool(SUPABASE_URL),"secret_configured":bool(SUPABASE_SECRET_KEY),"connected":None,"last_success":None,"last_attempt":None,"last_error":None}
 print(json.dumps({"supabase_startup":{"url_configured":bool(SUPABASE_URL),"secret_configured":bool(SUPABASE_SECRET_KEY)}}),flush=True)
 def supabase_write(table,row,prefer="return=minimal"):
@@ -18,7 +18,7 @@ def supabase_write(table,row,prefer="return=minimal"):
   with urllib.request.urlopen(req,timeout=4) as r:return 200<=r.status<300
  except Exception as e:
   STATE["supabase"]={"configured":bool(SUPABASE_URL and SUPABASE_SECRET_KEY),"url_configured":bool(SUPABASE_URL),"secret_configured":bool(SUPABASE_SECRET_KEY),"connected":False,"last_success":STATE.get("supabase",{}).get("last_success"),"last_error":repr(e)[:240],"last_attempt":time.time()}
-  print(json.dumps({"supabase_write_error":{"table":table,"error":repr(e)[:240]}}),flush=True)
+  print(json.dumps({"supabase_write_error":{"table":table,"error_type":type(e).__name__}}),flush=True)
   return False
 def archive_decision(d):
  row={"observed_at":datetime.datetime.fromtimestamp(d["ts"],datetime.timezone.utc).isoformat(),"strategy_version":d.get("strategy_version") or STRATEGY_VERSION,"git_commit":d.get("git_commit"),"market_slug":d.get("slug"),"duration":d.get("duration"),"seconds_into_market":d.get("seconds_into_market"),"long_quote":d.get("long_quote"),"short_quote":d.get("short_quote"),"quote_imbalance":d.get("quote_imbalance"),"pair_cost":d.get("pair_cost"),"gross_pair_edge":d.get("gross_pair_edge"),"threshold":d.get("threshold"),"result":d.get("result"),"reason":d.get("reason"),"source_restart_id":STATE["health"].get("restart_id")}
