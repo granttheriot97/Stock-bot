@@ -52,8 +52,13 @@ def probe():
     print(json.dumps({"target_selected":target}),flush=True);time.sleep(5)
    bbo=obj(c.markets.bbo(target["slug"]))
    md=(bbo.get("marketData",{}) if isinstance(bbo,dict) else {})
+   market_state=md.get("state")
    longq=float((md.get("longQuote") or {}).get("value",0) or 0);shortq=float((md.get("shortQuote") or {}).get("value",0) or 0)
-   pair=round(longq+shortq,4) if longq and shortq else None;edge=round(1-pair,4) if pair is not None else None
+   if market_state!="MARKET_STATE_OPEN" or longq<=0 or shortq<=0:
+    STATE.update(status="rotating; selected market is not open or has no valid quotes",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"state":market_state,"long_quote":longq,"short_quote":shortq,"pair_cost":None,"gross_pair_edge":None},error=None)
+    print(json.dumps({"target_rotation":{"slug":target["slug"],"state":market_state,"reason":"not open or invalid quotes"}}),flush=True)
+    target=None;time.sleep(5);continue
+   pair=round(longq+shortq,4);edge=round(1-pair,4)
    p=STATE["paper"];p["observations"]+=1;p["runtime_seconds"]=round(time.time()-STARTED_AT,1);p["observations_per_minute"]=round(p["observations"]/max((time.time()-STARTED_AT)/60,1/60),2);p["last_pair_cost"]=pair;p["last_gross_pair_edge"]=edge
    if pair is not None and (p["best_pair_cost"] is None or pair<p["best_pair_cost"]):p["best_pair_cost"]=pair
    if edge is not None and (p["best_gross_edge"] is None or edge>p["best_gross_edge"]):p["best_gross_edge"]=edge
