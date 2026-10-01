@@ -8,7 +8,7 @@ from collections import Counter,defaultdict
 
 EXCLUDE={"SPY","QQQ","IWM","DIA"}
 MIN_HISTORY=252
-MIN_FORMER_COVERAGE=0.90\n# Fail-closed capability contract: analysis/reporting modules only.\nALLOWED_IMPORTS={"ast","csv","json","math","os","sys","time","collections"}\n
+MIN_FORMER_COVERAGE=0.90\nPOLICY_PATH=os.path.join(os.path.dirname(__file__),"jarvis_policy.json")\n# Fail-closed capability contract: analysis/reporting modules only.\nALLOWED_IMPORTS={"ast","csv","json","math","os","sys","time","collections"}\n
 def finding(code,severity,message,repairable=False):
     return {"code":code,"severity":severity,"message":message,"repairable":repairable}
 
@@ -56,7 +56,7 @@ def audit_holdout():
 
 def main():
     bars=sys.argv[1] if len(sys.argv)>1 else "/tmp/b27b_bars.csv"
-    findings=audit_permissions()+audit_bars(bars)+audit_source()+audit_holdout()
+    findings=audit_policy()+audit_permissions()+audit_bars(bars)+audit_source()+audit_holdout()
     sev=Counter(x["severity"] for x in findings)
     report={"agent":"JARVIS","time":time.time(),"findings":findings,"counts":dict(sev)}
     path=os.getenv("B27B_JARVIS_REPORT","/tmp/b27b_jarvis_report.json")
