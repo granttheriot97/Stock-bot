@@ -138,7 +138,8 @@ def probe():
     except:pass
    decision={"ts":decision_ts,"strategy_version":STRATEGY_VERSION,"git_commit":GIT_COMMIT,"slug":target["slug"],"duration":target.get("duration"),"seconds_into_market":market_elapsed,"long_quote":longq,"short_quote":shortq,"quote_imbalance":round(longq-shortq,4),"pair_cost":pair,"gross_pair_edge":edge,"threshold":0.01,"result":"qualifying" if edge is not None and edge>=0.01 else "rejected","reason":"gross pair edge met threshold" if edge is not None and edge>=0.01 else "gross pair edge below threshold"}
    p["decision_log"]=(p["decision_log"]+[decision])[-2000:]
-   archive_decision(decision)\n   if p["observations"]%6==0: archive_health()
+   archive_decision(decision)
+   if p["observations"]%6==0: archive_health()
    # Two-step paper execution: a signal creates a pending intent; only a later qualifying BBO can confirm it.
    pending=p["pending_orders"].get(target["slug"])
    net_edge=round(edge-p["modeled_cost_per_share"],4)
