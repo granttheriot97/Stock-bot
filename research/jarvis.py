@@ -3,13 +3,12 @@
 Deterministic safety/audit layer. Research/paper only.
 It never changes strategy parameters, validation gates, or places trades.
 """
-import csv,json,math,os,sys,time
+import ast,csv,json,math,os,sys,time
 from collections import Counter,defaultdict
 
 EXCLUDE={"SPY","QQQ","IWM","DIA"}
 MIN_HISTORY=252
-MIN_FORMER_COVERAGE=0.90\n# Fail-closed capability contract. JARVIS may read research artifacts and write only its report.\nFORBIDDEN_SOURCE_TOKENS=("subprocess","os.system","Popen(","requests.post","urllib.request.Request(","github","render","broker","alpaca","interactivebrokers","tradier","order(","place_order","update_file","create_file")
-
+MIN_FORMER_COVERAGE=0.90\n# Fail-closed capability contract: analysis/reporting modules only.\nALLOWED_IMPORTS={"ast","csv","json","math","os","sys","time","collections"}\n
 def finding(code,severity,message,repairable=False):
     return {"code":code,"severity":severity,"message":message,"repairable":repairable}
 
