@@ -1,7 +1,7 @@
 import json,os,time,threading
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
-STATE={"mode":"paper-only","status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":30,"backoff_seconds":30}
+STATE={"mode":"paper-only","status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":30,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"note":"observer-first; no fills until execution model is validated"}}
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -41,8 +41,14 @@ def probe():
     STATE.update(status="target selected; polling one public market",market={"slug":slug,"title":title},error=None)
     print(json.dumps({"target_selected":target}),flush=True);time.sleep(5)
    bbo=obj(c.markets.bbo(target["slug"]));time.sleep(2);book=obj(c.markets.book(target["slug"]))
-   STATE.update(status="public BBO/order-book polling active",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"bbo":bbo,"book":book},error=None,backoff_seconds=30)
-   print(json.dumps({"public_tick":{"slug":target["slug"],"ts":STATE["last_update"],"bbo":bbo,"book":book}},default=str)[:6000],flush=True)
+   md=(bbo.get("marketData",{}) if isinstance(bbo,dict) else {})
+   longq=float((md.get("longQuote") or {}).get("value",0) or 0);shortq=float((md.get("shortQuote") or {}).get("value",0) or 0)
+   pair=round(longq+shortq,4) if longq and shortq else None;edge=round(1-pair,4) if pair is not None else None
+   p=STATE["paper"];p["last_pair_cost"]=pair;p["last_gross_pair_edge"]=edge
+   if edge is not None and edge>=0.01:p["opportunities"]+=1
+   else:p["rejected"]+=1
+   STATE.update(status="paper opportunity observer active",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"state":md.get("state"),"long_quote":longq,"short_quote":shortq,"pair_cost":pair,"gross_pair_edge":edge},error=None,backoff_seconds=30)
+   print(json.dumps({"paper_tick":{"slug":target["slug"],"pair_cost":pair,"gross_pair_edge":edge,"market_state":md.get("state"),"paper":STATE["paper"]}},default=str),flush=True)
    backoff=30;time.sleep(30)
   except Exception as e:
    msg=repr(e);STATE.update(status="rate-limited; backing off" if "429" in msg or "RateLimit" in msg else "probe error; retrying",last_update=time.time(),error=msg,backoff_seconds=backoff)
