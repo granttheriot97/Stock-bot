@@ -24,7 +24,7 @@ def fetch(symbol,years=10):
         rows.append([datetime.datetime.fromtimestamp(t,datetime.timezone.utc).date().isoformat(),symbol,o*factor,h*factor,l*factor,ac,v])
     return rows
 def main():
-    p=argparse.ArgumentParser();p.add_argument("--symbols",default=",".join(DEFAULT));p.add_argument("--membership-universe",action="store_true");p.add_argument("--years",type=int,default=10);p.add_argument("--out",default="research/bars.csv");a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument("--symbols",default=",".join(DEFAULT));p.add_argument("--membership-universe",action="store_true");p.add_argument("--former-plus-default",action="store_true");p.add_argument("--years",type=int,default=10);p.add_argument("--out",default="research/bars.csv");a=p.parse_args()
     syms=[x.strip().upper() for x in a.symbols.split(",") if x.strip()]
     if a.membership_universe:
         cutoff=(datetime.datetime.now(datetime.timezone.utc).date()-datetime.timedelta(days=int(a.years*365.25))).isoformat()
@@ -33,24 +33,26 @@ def main():
         hist={r["ticker"].strip().upper() for r in mr if r["start_date"] <= datetime.datetime.now(datetime.timezone.utc).date().isoformat() and (not r["end_date"] or r["end_date"] >= cutoff)}
         syms=sorted(hist | {"SPY"})
         print(f"B27B_FETCH_UNIVERSE symbols={len(syms)} cutoff={cutoff}",flush=True)
-    results={}
-    with ThreadPoolExecutor(max_workers=12) as pool:
+    elif a.former_plus_default:
+        today=datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        cutoff=(datetime.datetime.now(datetime.timezone.utc).date()-datetime.timedelta(days=int(a.years*365.25))).isoformat()
+        with open("research/data/sp500_ticker_start_end.csv",newline="") as mh:
+            mr=list(csv.DictReader(mh))
+        former={r["ticker"].strip().upper() for r in mr if r["end_date"] and cutoff <= r["end_date"] <= today}
+        syms=sorted(former | set(DEFAULT))
+        print(f"B27B_FETCH_UNIVERSE mode=former_plus_default symbols={len(syms)} cutoff={cutoff}",flush=True)
+    ok=0; failed=0; empty=0
+    with open(a.out,"w",newline="") as h, ThreadPoolExecutor(max_workers=12) as pool:
+        w=csv.writer(h);w.writerow(["timestamp","symbol","open","high","low","close","volume"])
         futures={pool.submit(fetch,s,a.years):s for s in syms}
         for future in as_completed(futures):
             s=futures[future]
-            try: results[s]=(future.result(),None)
-            except Exception as e: results[s]=([],repr(e))
-    ok=0; failed=0; empty=0
-    with open(a.out,"w",newline="") as h:
-        w=csv.writer(h);w.writerow(["timestamp","symbol","open","high","low","close","volume"])
-        for s in syms:
-            rows,error=results[s]
-            if error is not None:
-                failed+=1;print(s,"ERROR",error,flush=True)
-            else:
-                w.writerows(rows)
+            try:
+                rows=future.result();w.writerows(rows)
                 if rows: ok+=1
                 else: empty+=1
                 print(s,len(rows),flush=True)
+            except Exception as e:
+                failed+=1;print(s,"ERROR",repr(e),flush=True)
     print(f"B27B_FETCH_COVERAGE requested={len(syms)} nonempty={ok} empty={empty} failed={failed} coverage={(ok/len(syms) if syms else 0):.4f}",flush=True)
 if __name__=="__main__":main()
