@@ -1,0 +1,10 @@
+{
+  "mode": "paper-only",
+  "starting_cash_usd": 100,
+  "created_at": "2026-10-01T03:00:00Z",
+  "markets_completed": 0,
+  "observations_archived": 0,
+  "qualifying_events": [],
+  "market_summaries": [],
+  "note": "Durable forward-test checkpoint. Updated periodically; not every polling tick."
+}
