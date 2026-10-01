@@ -61,7 +61,7 @@ jobs:
           hp=pathlib.Path("paper_history/health.jsonl")
           health_row={"archived_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),
                       "engine_started_at":s.get("started_at"),"last_update":s.get("last_update"),
-                      "status":s.get("status"),"health":s.get("health") or {},
+                      "status":s.get("status"),"strategy":s.get("strategy") or {},"health":s.get("health") or {},
                       "observations":paper.get("observations",0),"markets_seen":paper.get("markets_seen") or []}
           hp.parent.mkdir(exist_ok=True)
           with hp.open("a") as f:f.write(json.dumps(health_row,separators=(",",":"))+"\n")
