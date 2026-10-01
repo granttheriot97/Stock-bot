@@ -2,7 +2,7 @@ import json,os,time,threading,re,datetime
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
 STARTED_AT=time.time()
-STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":5,"backoff_seconds":15,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"note":"fast BBO observer; no fills until execution model is validated"}}
+STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":5,"backoff_seconds":15,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"note":"fast BBO observer plus periodic order-book execution research; no fills until execution model is validated"}}
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -37,7 +37,7 @@ def active_slug(slug):
  now=datetime.datetime.now(datetime.timezone.utc)
  return start<=now<start+datetime.timedelta(minutes=mins)
 def probe():
- c=PolymarketUS();targets=[];target=None;backoff=15;last_discovery=0
+ c=PolymarketUS();targets=[];target=None;backoff=15;last_discovery=0;last_book_sample={}
  while True:
   try:
    if target is None or time.time()-last_discovery>60:
@@ -69,7 +69,21 @@ def probe():
     print(json.dumps({"target_rotation":{"slug":target["slug"],"state":market_state,"reason":"not open or invalid quotes"}}),flush=True)
     targets=[x for x in targets if x["slug"]!=target["slug"]];target=targets[0] if targets else None;time.sleep(2);continue
    pair=round(longq+shortq,4);edge=round(1-pair,4)
-   p=STATE["paper"];p["observations"]+=1;p["runtime_seconds"]=round(time.time()-STARTED_AT,1);p["observations_per_minute"]=round(p["observations"]/max((time.time()-STARTED_AT)/60,1/60),2);p["last_pair_cost"]=pair;p["last_gross_pair_edge"]=edge
+   p=STATE["paper"]
+   if time.time()-last_book_sample.get(target["slug"],0)>=30:
+    try:
+     book=obj(c.markets.book(target["slug"]));bmd=(book.get("marketData",{}) if isinstance(book,dict) else {})
+     bids=bmd.get("bids") or [];offers=bmd.get("offers") or []
+     def level(x):
+      if not isinstance(x,dict):return None
+      px=x.get("px") or {};return {"price":float(px.get("value",0) or 0),"qty":float(x.get("qty",0) or 0)}
+     snap={"ts":time.time(),"slug":target["slug"],"top_bid":level(bids[0]) if bids else None,"top_offer":level(offers[0]) if offers else None,"bid_levels":len(bids),"offer_levels":len(offers),"transact_time":bmd.get("transactTime")}
+     if snap["top_bid"] and snap["top_offer"]:snap["displayed_spread"]=round(snap["top_offer"]["price"]-snap["top_bid"]["price"],4)
+     p["execution_snapshots"]=(p["execution_snapshots"]+[snap])[-100:];p["execution_snapshot_count"]+=1;last_book_sample[target["slug"]]=time.time()
+     print(json.dumps({"execution_snapshot":snap}),flush=True)
+    except Exception as be:
+     p["last_execution_snapshot_error"]=repr(be)[:240]
+   p["observations"]+=1;p["runtime_seconds"]=round(time.time()-STARTED_AT,1);p["observations_per_minute"]=round(p["observations"]/max((time.time()-STARTED_AT)/60,1/60),2);p["last_pair_cost"]=pair;p["last_gross_pair_edge"]=edge
    if pair is not None and (p["best_pair_cost"] is None or pair<p["best_pair_cost"]):p["best_pair_cost"]=pair
    if edge is not None and (p["best_gross_edge"] is None or edge>p["best_gross_edge"]):p["best_gross_edge"]=edge
    if target["slug"] not in p["markets_seen"]:p["markets_seen"]=(p["markets_seen"]+[target["slug"]])[-20:]
