@@ -1,0 +1,25 @@
+{
+  "agent": "JARVIS",
+  "version": 1,
+  "mode": "read_only_auditor",
+  "allowed": [
+    "read_research_files",
+    "analyze_research_data",
+    "write_jarvis_report",
+    "emit_findings"
+  ],
+  "forbidden": [
+    "modify_own_policy",
+    "modify_own_source",
+    "modify_strategy",
+    "modify_validation_gates",
+    "execute_shell_commands",
+    "network_access",
+    "github_write",
+    "render_write",
+    "brokerage_access",
+    "place_orders",
+    "live_trading"
+  ],
+  "fail_closed": true
+}
