@@ -51,7 +51,8 @@ def run():
     v=x[field];i=0 if v<=q25 else 1 if v<=q50 else 2 if v<=q75 else 3;groups[i].append(x)
    return {"cutpoints":[round(q25,6),round(q50,6),round(q75,6)],"quartiles":{"Q1":summary(groups[0]),"Q2":summary(groups[1]),"Q3":summary(groups[2]),"Q4":summary(groups[3])}}
   # Leave pair cost out as a selector because it directly defines edge and would be tautological.
-  chrono=sorted(rows,key=lambda x:(x["ts"]<=0,x["ts"],x["m"])); k=int(len(chrono)*.8); train=chrono[:k]; test=chrono[k:];\n  S["markets"]=len(a);S["conditions"]={
+  chrono=sorted(rows,key=lambda x:(x["ts"]<=0,x["ts"],x["m"])); k=int(len(chrono)*.8); train=chrono[:k]; test=chrono[k:];
+  S["markets"]=len(a);S["conditions"]={
    "method":"Stage 7 chronological regime analysis using each market first observed trade timestamp; descriptive historical evidence, not executable fill proof",
    "clean_paired_markets":len(rows),"overall":summary(rows),"chronological_80_20":{"first_80pct":summary(train),"last_20pct":summary(test),"timestamped_markets":sum(x["ts"]>0 for x in rows)},
    "by_market_buy_count":bucket("buys"),
