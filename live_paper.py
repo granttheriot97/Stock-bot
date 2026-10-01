@@ -1,10 +1,28 @@
-import json,os,time,threading,re,datetime
+import json,os,time,threading,re,datetime,urllib.request
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
 STARTED_AT=time.time()
 STRATEGY_VERSION="V1"
 GIT_COMMIT=os.getenv("RENDER_GIT_COMMIT","unknown")
 STATE={"mode":"paper-only","strategy":{"version":STRATEGY_VERSION,"git_commit":GIT_COMMIT,"frozen_threshold":0.01},"started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":10,"backoff_seconds":30,"health":{"restart_id":str(int(STARTED_AT)),"last_success":None,"last_error":None,"consecutive_errors":0,"rate_limit_errors":0,"market_rotations":0},"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"bbo-authoritative-paper-model","paper_fills_enabled":True,"rule":"use documented BBO for conservative paper execution; raw book retained as diagnostic only"},"paper_orders":[],"paper_fills":[],"pending_orders":{},"next_order_id":1,"unfilled_orders":0,"confirmed_orders":0,"max_position_usd":10.0,"modeled_cost_per_share":0.001,"note":"two-step BBO-confirmed paper execution with modeled costs; raw order book diagnostic only; real orders disabled"}}
+SUPABASE_URL=os.getenv("SUPABASE_URL","").rstrip("/")
+SUPABASE_SECRET_KEY=os.getenv("SUPABASE_SECRET_KEY","")
+def supabase_write(table,row,prefer="return=minimal"):
+ if not SUPABASE_URL or not SUPABASE_SECRET_KEY:return False
+ try:
+  data=json.dumps(row,default=str).encode()
+  req=urllib.request.Request(SUPABASE_URL+"/rest/v1/"+table,data=data,method="POST",headers={"apikey":SUPABASE_SECRET_KEY,"Authorization":"Bearer "+SUPABASE_SECRET_KEY,"Content-Type":"application/json","Prefer":prefer})
+  with urllib.request.urlopen(req,timeout=4) as r:return 200<=r.status<300
+ except Exception as e:
+  STATE["supabase"]={"connected":False,"last_error":repr(e)[:240],"last_attempt":time.time()}
+  return False
+def archive_decision(d):
+ row={"observed_at":datetime.datetime.fromtimestamp(d["ts"],datetime.timezone.utc).isoformat(),"strategy_version":d.get("strategy_version") or STRATEGY_VERSION,"git_commit":d.get("git_commit"),"market_slug":d.get("slug"),"duration":d.get("duration"),"seconds_into_market":d.get("seconds_into_market"),"long_quote":d.get("long_quote"),"short_quote":d.get("short_quote"),"quote_imbalance":d.get("quote_imbalance"),"pair_cost":d.get("pair_cost"),"gross_pair_edge":d.get("gross_pair_edge"),"threshold":d.get("threshold"),"result":d.get("result"),"reason":d.get("reason"),"source_restart_id":STATE["health"].get("restart_id")}
+ ok=supabase_write("market_observations",row,"resolution=ignore-duplicates,return=minimal")
+ STATE["supabase"]={"connected":ok,"last_success":time.time() if ok else STATE.get("supabase",{}).get("last_success"),"last_attempt":time.time()}
+def archive_order(o):
+ row={"order_id":o.get("order_id"),"strategy_version":o.get("strategy_version") or STRATEGY_VERSION,"git_commit":o.get("git_commit"),"status":o.get("status"),"market_slug":o.get("slug"),"created_at":datetime.datetime.fromtimestamp(o["created_ts"],datetime.timezone.utc).isoformat() if o.get("created_ts") else None,"closed_at":datetime.datetime.fromtimestamp(o["closed_ts"],datetime.timezone.utc).isoformat() if o.get("closed_ts") else None,"fill_pair_cost":o.get("fill_pair_cost"),"locked_net_pnl":o.get("locked_net_pnl"),"payload":o}
+ supabase_write("paper_orders",row,"resolution=merge-duplicates,return=minimal")
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -111,7 +129,7 @@ def probe():
     try:market_elapsed=round(decision_ts-datetime.datetime.strptime(sm.group(1)+sm.group(2),"%Y-%m-%d%H%M").replace(tzinfo=datetime.timezone.utc).timestamp(),1)
     except:pass
    decision={"ts":decision_ts,"strategy_version":STRATEGY_VERSION,"git_commit":GIT_COMMIT,"slug":target["slug"],"duration":target.get("duration"),"seconds_into_market":market_elapsed,"long_quote":longq,"short_quote":shortq,"quote_imbalance":round(longq-shortq,4),"pair_cost":pair,"gross_pair_edge":edge,"threshold":0.01,"result":"qualifying" if edge is not None and edge>=0.01 else "rejected","reason":"gross pair edge met threshold" if edge is not None and edge>=0.01 else "gross pair edge below threshold"}
-   p["decision_log"]=(p["decision_log"]+[decision])[-2000:]
+   p["decision_log"]=(p["decision_log"]+[decision])[-2000:]\n   archive_decision(decision)
    # Two-step paper execution: a signal creates a pending intent; only a later qualifying BBO can confirm it.
    pending=p["pending_orders"].get(target["slug"])
    net_edge=round(edge-p["modeled_cost_per_share"],4)
@@ -121,11 +139,11 @@ def probe():
      if shares>0:
       cost=round(shares*pair,4);modeled_cost=round(shares*p["modeled_cost_per_share"],4);payout=round(shares,4);profit=round(payout-cost-modeled_cost,4)
       fill={"order_id":pending.get("order_id"),"strategy_version":STRATEGY_VERSION,"git_commit":GIT_COMMIT,"status":"confirmed_fill","ts":time.time(),"created_ts":pending["created_ts"],"confirmation_delay_seconds":round(time.time()-pending["created_ts"],2),"slug":target["slug"],"shares_each_side":shares,"up_px":longq,"down_px":shortq,"pair_cost":pair,"cash_cost":cost,"modeled_cost":modeled_cost,"locked_payout":payout,"locked_net_pnl":profit,"model":"two-step BBO-confirmed paired paper fill"}
-      pending["status"]="confirmed_fill";pending["closed_ts"]=fill["ts"];pending["fill_pair_cost"]=pair;pending["locked_net_pnl"]=profit;p["paper_orders"]=(p["paper_orders"]+[pending])[-200:];p["cash"]=round(p["cash"]-cost-modeled_cost+payout,4);p["realized_pnl"]=round(p["realized_pnl"]+profit,4);p["simulated_trades"]+=1;p["confirmed_orders"]+=1;p["paper_fills"]=(p["paper_fills"]+[fill])[-200:];p["pending_orders"].pop(target["slug"],None)
+      pending["status"]="confirmed_fill";pending["closed_ts"]=fill["ts"];pending["fill_pair_cost"]=pair;pending["locked_net_pnl"]=profit;p["paper_orders"]=(p["paper_orders"]+[pending])[-200:];archive_order(pending);p["cash"]=round(p["cash"]-cost-modeled_cost+payout,4);p["realized_pnl"]=round(p["realized_pnl"]+profit,4);p["simulated_trades"]+=1;p["confirmed_orders"]+=1;p["paper_fills"]=(p["paper_fills"]+[fill])[-200:];p["pending_orders"].pop(target["slug"],None)
     else:
      pending["checks"]+=1
      if pending["checks"]>=1:
-      pending["status"]="unfilled";pending["closed_ts"]=time.time();pending["reason"]="qualifying edge did not survive next BBO observation";p["paper_orders"]=(p["paper_orders"]+[pending])[-200:];p["unfilled_orders"]+=1;p["pending_orders"].pop(target["slug"],None)
+      pending["status"]="unfilled";pending["closed_ts"]=time.time();pending["reason"]="qualifying edge did not survive next BBO observation";p["paper_orders"]=(p["paper_orders"]+[pending])[-200:];archive_order(pending);p["unfilled_orders"]+=1;p["pending_orders"].pop(target["slug"],None)
    elif decision["result"]=="qualifying" and net_edge>0 and p["execution_semantics"].get("paper_fills_enabled") and pair>0:
     oid="P"+str(p["next_order_id"]).zfill(6);p["next_order_id"]+=1;intent={"order_id":oid,"strategy_version":STRATEGY_VERSION,"git_commit":GIT_COMMIT,"created_ts":time.time(),"slug":target["slug"],"signal_pair_cost":pair,"signal_gross_edge":edge,"signal_net_edge_after_modeled_cost":net_edge,"max_pair_cost":pair,"checks":0,"status":"pending_confirmation"}
     p["pending_orders"][target["slug"]]=intent;p["paper_orders"]=(p["paper_orders"]+[intent.copy()])[-200:]
