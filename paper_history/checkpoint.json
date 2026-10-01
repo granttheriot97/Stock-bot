@@ -1,29 +1,29 @@
 {
-  "archived_at": "2026-10-01T07:59:18.097454+00:00",
-  "engine_started_at": 1790841238.943211,
-  "last_update": 1790841552.9826076,
+  "archived_at": "2026-10-01T08:23:10.561906+00:00",
+  "engine_started_at": 1790842886.7453268,
+  "last_update": 1790842983.445715,
   "status": "paper opportunity observer active",
   "health": {
-    "restart_id": "1790841238",
-    "last_success": 1790841552.982517,
+    "restart_id": "1790842886",
+    "last_success": 1790842983.3844264,
     "last_error": null,
     "consecutive_errors": 0,
     "rate_limit_errors": 0,
-    "market_rotations": 6
+    "market_rotations": 2
   },
   "session": {
-    "observations": 31,
+    "observations": 10,
     "opportunities": 0,
     "confirmed_orders": 0,
     "unfilled_orders": 0,
     "realized_pnl": 0.0,
     "markets_seen": [
-      "cpc-btc-updown-15m-2026-10-01-0745z"
+      "cpc-btc-updown-15m-2026-10-01-0815z"
     ]
   },
   "archive": {
-    "new_decisions_this_run": 31,
-    "total_decision_lines": 538,
+    "new_decisions_this_run": 10,
+    "total_decision_lines": 548,
     "new_final_orders_this_run": 0,
     "total_final_order_lines": 0
   }
