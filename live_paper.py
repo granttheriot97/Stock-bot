@@ -35,7 +35,7 @@ def probe():
     STATE.update(status="target selected; polling one public market",market={"slug":slug,"title":title},error=None)
     print(json.dumps({"target_selected":target}),flush=True);time.sleep(5)
    bbo=obj(c.markets.bbo(target["slug"]));time.sleep(2);book=obj(c.markets.book(target["slug"]))
-   STATE.update(status="public BBO/order-book polling active",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"bbo":bbo,"book":book},error=None,backoff_seconds:30)
+   STATE.update(status="public BBO/order-book polling active",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"bbo":bbo,"book":book},error=None,backoff_seconds=30)
    print(json.dumps({"public_tick":{"slug":target["slug"],"ts":STATE["last_update"]}}),flush=True)
    backoff=30;time.sleep(30)
   except Exception as e:
