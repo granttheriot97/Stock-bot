@@ -74,7 +74,7 @@ jobs:
             "realized_pnl":paper.get("realized_pnl",0),"markets_seen":paper.get("markets_seen") or []},
             "archive":{"new_decisions_this_run":len(new),"total_decision_lines":len(old)+len(new),"new_final_orders_this_run":len(new_orders),"total_final_order_lines":len(old_orders)+len(new_orders)}
           }
-          pathlib.Path("paper_history/checkpoint.json").write_text(json.dumps(checkpoint,indent=2)+"\n")
+          # Local integrity facts for cross-checking against the independent Supabase archive.\n          checkpoint["integrity"]={"github_decision_lines":len(old)+len(new),"github_final_order_lines":len(old_orders)+len(new_orders),"latest_decision_ts":max([x.get("ts") or 0 for x in events],default=0),"strategy_version":(s.get("strategy") or {}).get("version")}\n          pathlib.Path("paper_history/checkpoint.json").write_text(json.dumps(checkpoint,indent=2)+"\n")
           print("archived",len(new),"new decisions; checkpoint updated")
           PY
       - name: Commit archive
