@@ -1,42 +1,53 @@
 import json,os,time,threading
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
-STATE={"mode":"paper-only","status":"starting public live-data probe","target":"BTC Up or Down 15m","last_update":None,"markets":[],"error":None,"real_orders":False}
+STATE={"mode":"paper-only","status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":30,"backoff_seconds":30}
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
 def walk(v):
  if isinstance(v,dict):
   yield v
-  for x in v.values(): yield from walk(x)
+  for x in v.values():yield from walk(x)
  elif isinstance(v,list):
-  for x in v: yield from walk(x)
+  for x in v:yield from walk(x)
+def choose(res):
+ seen=set();rank=[]
+ for d in walk(res):
+  if not isinstance(d,dict):continue
+  slug=d.get("slug") or d.get("marketSlug") or d.get("market_slug")
+  if not slug or slug in seen:continue
+  seen.add(slug);title=d.get("title") or d.get("question") or d.get("name") or ""
+  t=(slug+" "+str(title)).lower()
+  if "bitcoin" not in t and "btc" not in t:continue
+  score=(100 if "15" in t and ("min" in t or "minute" in t or "15m" in t) else 0)+(40 if ("up" in t and "down" in t) else 0)+(20 if "btc" in t else 0)
+  rank.append((score,slug,title))
+ return sorted(rank,reverse=True)
 def probe():
- c=PolymarketUS()
+ c=PolymarketUS();target=None;backoff=30
  while True:
   try:
-   res=obj(c.search.query({"query":"bitcoin"}))
-   candidates=[]
-   for d in walk(res):
-    if not isinstance(d,dict):continue
-    text=" ".join(str(d.get(k,"")) for k in ("slug","title","question","name")).lower()
-    if "bitcoin" not in text and "btc" not in text:continue
-    slug=d.get("slug") or d.get("marketSlug") or d.get("market_slug")
-    if not slug:continue
-    try:
-     bbo=obj(c.markets.bbo(slug));book=obj(c.markets.book(slug))
-     candidates.append({"slug":slug,"title":d.get("title") or d.get("question") or d.get("name"),"bbo":bbo,"book":book})
-    except Exception as e:candidates.append({"slug":slug,"title":d.get("title") or d.get("question") or d.get("name"),"error":repr(e)})
-   STATE.update(status="public live-data probe active",last_update=time.time(),markets=candidates[:10],error=None)
-   print(json.dumps({"live_probe":{"markets_found":len(candidates),"sample":[{"slug":x.get("slug"),"title":x.get("title"),"error":x.get("error")} for x in candidates[:5]]}}),flush=True)
+   if target is None:
+    ranked=choose(obj(c.search.query({"query":"bitcoin"})))
+    if not ranked:raise RuntimeError("No Bitcoin markets returned by public search")
+    # Only touch one candidate per cycle. Never fan out across the search result.
+    score,slug,title=ranked[0];target={"slug":slug,"title":title,"score":score}
+    STATE.update(status="target selected; polling one public market",market={"slug":slug,"title":title},error=None)
+    print(json.dumps({"target_selected":target}),flush=True);time.sleep(5)
+   bbo=obj(c.markets.bbo(target["slug"]));time.sleep(2);book=obj(c.markets.book(target["slug"]))
+   STATE.update(status="public BBO/order-book polling active",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"bbo":bbo,"book":book},error=None,backoff_seconds:30)
+   print(json.dumps({"public_tick":{"slug":target["slug"],"ts":STATE["last_update"]}}),flush=True)
+   backoff=30;time.sleep(30)
   except Exception as e:
-   STATE.update(status="probe error",last_update=time.time(),error=repr(e));print(json.dumps({"live_probe_error":repr(e)}),flush=True)
-  time.sleep(15)
+   msg=repr(e);STATE.update(status="rate-limited; backing off" if "429" in msg or "RateLimit" in msg else "probe error; retrying",last_update=time.time(),error=msg,backoff_seconds=backoff)
+   print(json.dumps({"public_probe_retry":{"seconds":backoff,"error":msg[:240]}}),flush=True)
+   if "404" in msg or "NotFound" in msg:target=None
+   time.sleep(backoff);backoff=min(backoff*2,300)
 class H(BaseHTTPRequestHandler):
  def do_GET(self):
-  b=json.dumps(STATE,default=str).encode();self.send_response(200);self.send_header("Content-Type","application/json");self.send_header("Access-Control-Allow-Origin","*");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
+  b=json.dumps(STATE,default=str).encode();self.send_response(200);self.send_header("Content-Type","application/json");self.send_header("Access-Control-Allow-Origin","*");self.send_header("Cache-Control","no-store");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
  def log_message(self,*a):pass
 if __name__=="__main__":
- print("B27B PUBLIC LIVE-DATA PROBE — PAPER ONLY",flush=True)
+ print("B27B CONSERVATIVE PUBLIC LIVE-DATA PROBE — PAPER ONLY",flush=True)
  threading.Thread(target=probe,daemon=True).start()
  HTTPServer(("0.0.0.0",int(os.environ.get("PORT","10000"))),H).serve_forever()
