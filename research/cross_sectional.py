@@ -4,8 +4,10 @@ Ranks a broad liquid-stock universe on 12-minus-1-month momentum, owns the
 top ten names, and rebalances every 21 trading days. Research/paper only.
 """
 import argparse
+import csv
 import math
 import os
+from collections import defaultdict
 
 from multi_strategy import load
 
@@ -15,6 +17,7 @@ LOOKBACK = 252
 SKIP_RECENT = 21
 HOLDINGS = 10
 REBALANCE = 21
+MEMBERSHIP_PATH = os.path.join(os.path.dirname(__file__), "data", "sp500_ticker_start_end.csv")
 
 
 def metrics(rets, trades):
@@ -39,7 +42,21 @@ def build_maps(data):
     }
 
 
-def run_fold(data, maps, dates, start, end):
+def load_membership(path):
+    periods = defaultdict(list)
+    with open(path, newline="") as handle:
+        for row in csv.DictReader(handle):
+            periods[row["ticker"]].append((row["start_date"], row["end_date"] or None))
+    return periods
+
+
+def is_member(periods, symbol, date):
+    if periods is None:
+        return True
+    return any(start <= date and (end is None or date <= end) for start, end in periods.get(symbol, []))
+
+
+def run_fold(data, maps, dates, start, end, membership=None):
     candidates = sorted(symbol for symbol in data if symbol not in EXCLUDE)
     cost = COST_BPS / 10000
     weights = {}
@@ -74,6 +91,8 @@ def run_fold(data, maps, dates, start, end):
             skip_date = dates[i - SKIP_RECENT]
             ranked = []
             for symbol in candidates:
+                if not is_member(membership, symbol, date):
+                    continue
                 old = maps[symbol].get(old_date)
                 recent = maps[symbol].get(skip_date)
                 tomorrow = maps[symbol].get(next_date)
@@ -91,6 +110,8 @@ def run_fold(data, maps, dates, start, end):
 
         available = []
         for symbol in candidates:
+            if not is_member(membership, symbol, date):
+                continue
             today_row = maps[symbol].get(date)
             next_row = maps[symbol].get(next_date)
             if today_row and next_row and today_row["open"] > 0:
@@ -109,6 +130,56 @@ def run_fold(data, maps, dates, start, end):
     return metrics(strategy_rets, trades), metrics(equal_weight_rets, 0), metrics(spy_rets, 0)
 
 
+def summarize(folds):
+    valid = [fold for fold in folds if all(fold)]
+    if not valid:
+        return None
+    returns = [fold[0]["return"] for fold in valid]
+    result = {
+        "folds": len(valid),
+        "positive": sum(ret > 0 for ret in returns),
+        "average": sum(returns) / len(returns),
+        "compound": math.prod(1 + ret for ret in returns) - 1,
+        "minimum": min(returns),
+        "sharpe": sum(fold[0]["sharpe"] for fold in valid) / len(valid),
+        "drawdown": min(fold[0]["dd"] for fold in valid),
+        "trades": sum(fold[0]["trades"] for fold in valid),
+        "equal_weight": sum(fold[1]["return"] for fold in valid) / len(valid),
+        "spy": sum(fold[2]["return"] for fold in valid) / len(valid),
+        "asset_wins": sum(fold[0]["return"] > fold[1]["return"] for fold in valid),
+        "spy_wins": sum(fold[0]["return"] > fold[2]["return"] for fold in valid),
+    }
+    result["passes"] = (
+        result["positive"] >= 3 and result["average"] > 0 and result["compound"] > 0
+        and result["sharpe"] > 0.5 and result["trades"] >= 20
+        and result["drawdown"] > -0.25 and result["asset_wins"] >= 3
+        and result["spy_wins"] >= 3
+    )
+    return result
+
+
+def print_result(strategy, result):
+    if result is None:
+        return
+    print(
+        f"PORTFOLIO,{strategy},{result['folds']},{result['positive']},"
+        f"{result['average']:.6f},{result['compound']:.6f},{result['minimum']:.6f},"
+        f"{result['sharpe']:.3f},{result['drawdown']:.6f},{result['trades']},"
+        f"{result['equal_weight']:.6f},{result['spy']:.6f},{result['asset_wins']},"
+        f"{result['spy_wins']},{result['passes']}"
+    )
+
+
+def print_folds(label, folds):
+    for number, fold in enumerate(folds, 1):
+        strategy, equal_weight, spy = fold
+        print(
+            f"B27B_PORTFOLIO_FOLD {label} {number} strategy={strategy['return']:.6f} "
+            f"equal_weight={equal_weight['return']:.6f} spy={spy['return']:.6f} "
+            f"sharpe={strategy['sharpe']:.3f} drawdown={strategy['dd']:.6f}"
+        )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("csv")
@@ -119,37 +190,20 @@ def main():
     maps = build_maps(data)
     dates = [row["timestamp"] for row in data["SPY"]]
     cuts = [int(len(dates) * fraction) for fraction in (0.55, 0.65, 0.75, 0.85)]
-    folds = []
+    membership = load_membership(MEMBERSHIP_PATH)
+    baseline_folds = []
+    point_in_time_folds = []
     for cut in cuts:
         end = min(len(dates), cut + int(len(dates) * 0.10))
         if cut >= LOOKBACK and end - cut > 2:
-            folds.append(run_fold(data, maps, dates, cut, end))
+            baseline_folds.append(run_fold(data, maps, dates, cut, end))
+            point_in_time_folds.append(run_fold(data, maps, dates, cut, end, membership))
 
     print("symbol,strategy,folds,positive_folds,avg_test_return,compound_oos_return,min_fold_return,avg_sharpe,worst_drawdown,total_trades,asset_buyhold_return,spy_return,beats_asset_folds,beats_spy_folds,passes")
-    valid = [fold for fold in folds if all(fold)]
-    if not valid:
-        return
-    returns = [fold[0]["return"] for fold in valid]
-    positives = sum(ret > 0 for ret in returns)
-    average = sum(returns) / len(returns)
-    compound = math.prod(1 + ret for ret in returns) - 1
-    minimum = min(returns)
-    sharpe = sum(fold[0]["sharpe"] for fold in valid) / len(valid)
-    drawdown = min(fold[0]["dd"] for fold in valid)
-    trades = sum(fold[0]["trades"] for fold in valid)
-    equal_weight = sum(fold[1]["return"] for fold in valid) / len(valid)
-    spy = sum(fold[2]["return"] for fold in valid) / len(valid)
-    asset_wins = sum(fold[0]["return"] > fold[1]["return"] for fold in valid)
-    spy_wins = sum(fold[0]["return"] > fold[2]["return"] for fold in valid)
-    passes = (
-        positives >= 3 and average > 0 and compound > 0 and sharpe > 0.5
-        and trades >= 20 and drawdown > -0.25 and asset_wins >= 3 and spy_wins >= 3
-    )
-    print(
-        f"PORTFOLIO,cross_sectional_momentum_12_1_top10,{len(valid)},{positives},"
-        f"{average:.6f},{compound:.6f},{minimum:.6f},{sharpe:.3f},{drawdown:.6f},"
-        f"{trades},{equal_weight:.6f},{spy:.6f},{asset_wins},{spy_wins},{passes}"
-    )
+    print_result("cross_sectional_momentum_12_1_top10", summarize(baseline_folds))
+    print_result("cross_sectional_momentum_12_1_top10_pit_subset", summarize(point_in_time_folds))
+    print_folds("baseline", baseline_folds)
+    print_folds("pit_subset", point_in_time_folds)
 
 
 if __name__ == "__main__":
