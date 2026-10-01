@@ -1,30 +1,29 @@
 {
-  "archived_at": "2026-10-01T07:24:51.474418+00:00",
-  "engine_started_at": 1790838276.2060623,
-  "last_update": 1790839491.0363379,
-  "status": "paper opportunity observer active",
+  "archived_at": "2026-10-01T07:44:00.072547+00:00",
+  "engine_started_at": 1790840489.6015356,
+  "last_update": 1790840637.3180985,
+  "status": "multi-market BTC observer active",
   "health": {
-    "restart_id": "1790838276",
-    "last_success": 1790839491.0362706,
-    "last_error": 1790839194.7817733,
+    "restart_id": "1790840489",
+    "last_success": 1790840605.1022522,
+    "last_error": null,
     "consecutive_errors": 0,
     "rate_limit_errors": 0,
-    "market_rotations": 76
+    "market_rotations": 9
   },
   "session": {
-    "observations": 88,
+    "observations": 12,
     "opportunities": 0,
     "confirmed_orders": 0,
     "unfilled_orders": 0,
     "realized_pnl": 0.0,
     "markets_seen": [
-      "cpc-btc-updown-15m-2026-10-01-0700z",
-      "cpc-btc-updown-15m-2026-10-01-0715z"
+      "cpc-btc-updown-15m-2026-10-01-0730z"
     ]
   },
   "archive": {
-    "new_decisions_this_run": 88,
-    "total_decision_lines": 495,
+    "new_decisions_this_run": 12,
+    "total_decision_lines": 507,
     "new_final_orders_this_run": 0,
     "total_final_order_lines": 0
   }
