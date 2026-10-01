@@ -1,4 +1,4 @@
-import json,os,time,threading
+import json,os,time,threading,re,datetime
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
 STATE={"mode":"paper-only","status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":30,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"note":"observer-first; no fills until execution model is validated"}}
@@ -28,6 +28,13 @@ def choose(res):
   score=(200 if d15 else 100)+(20 if "btc" in t else 0)
   rank.append((score,slug,title))
  return sorted(rank,reverse=True)
+def active_slug(slug):
+ m=re.search(r"(\\d{4}-\\d{2}-\\d{2})-(\\d{4})z",slug or "")
+ if not m:return True
+ start=datetime.datetime.strptime(m.group(1)+m.group(2),"%Y-%m-%d%H%M").replace(tzinfo=datetime.timezone.utc)
+ mins=15 if "15m" in slug else 60
+ now=datetime.datetime.now(datetime.timezone.utc)
+ return start<=now<start+datetime.timedelta(minutes=mins)
 def probe():
  c=PolymarketUS();target=None;backoff=30
  while True:
@@ -37,7 +44,9 @@ def probe():
     if not ranked: ranked=choose(obj(c.search.query({"query":"bitcoin"})))
     if not ranked:raise RuntimeError("No active short-duration BTC UP/DOWN candidate found; refusing to substitute an unrelated BTC market")
     # Only touch one candidate per cycle. Never fan out across the search result.
-    score,slug,title=ranked[0];target={"slug":slug,"title":title,"score":score}
+    live=[x for x in ranked if active_slug(x[1])]
+    if not live:raise RuntimeError("No currently active short-duration BTC UP/DOWN market found; waiting for rotation")
+    score,slug,title=live[0];target={"slug":slug,"title":title,"score":score}
     STATE.update(status="target selected; polling one public market",market={"slug":slug,"title":title},error=None)
     print(json.dumps({"target_selected":target}),flush=True);time.sleep(5)
    bbo=obj(c.markets.bbo(target["slug"]));time.sleep(2);book=obj(c.markets.book(target["slug"]))
@@ -49,7 +58,10 @@ def probe():
    else:p["rejected"]+=1
    STATE.update(status="paper opportunity observer active",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"state":md.get("state"),"long_quote":longq,"short_quote":shortq,"pair_cost":pair,"gross_pair_edge":edge},error=None,backoff_seconds=30)
    print(json.dumps({"paper_tick":{"slug":target["slug"],"pair_cost":pair,"gross_pair_edge":edge,"market_state":md.get("state"),"paper":STATE["paper"]}},default=str),flush=True)
-   backoff=30;time.sleep(30)
+   backoff=30
+   if not active_slug(target["slug"]):
+    print(json.dumps({"target_rotation":{"expired":target["slug"]}}),flush=True);target=None
+   time.sleep(30)
   except Exception as e:
    msg=repr(e);STATE.update(status="rate-limited; backing off" if "429" in msg or "RateLimit" in msg else "probe error; retrying",last_update=time.time(),error=msg,backoff_seconds=backoff)
    print(json.dumps({"public_probe_retry":{"seconds":backoff,"error":msg[:240]}}),flush=True)
