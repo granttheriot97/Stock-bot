@@ -1,0 +1,23 @@
+name: Analyze B27B forward test
+on:
+  schedule:
+    - cron: "25 6 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Analyze persistent archive
+        run: python analysis_forward_test.py
+      - name: Commit analysis
+        run: |
+          if git diff --quiet -- paper_history/analysis; then exit 0; fi
+          git config user.name "b27b-paper-analyst"
+          git config user.email "actions@users.noreply.github.com"
+          git add paper_history/analysis
+          git commit -m "Update B27B forward-test analysis"
+          git pull --rebase origin main
+          git push
