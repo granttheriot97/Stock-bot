@@ -8,7 +8,7 @@ from collections import Counter,defaultdict
 
 EXCLUDE={"SPY","QQQ","IWM","DIA"}
 MIN_HISTORY=252
-MIN_FORMER_COVERAGE=0.90
+MIN_FORMER_COVERAGE=0.90\n# Fail-closed capability contract. JARVIS may read research artifacts and write only its report.\nFORBIDDEN_SOURCE_TOKENS=("subprocess","os.system","Popen(","requests.post","urllib.request.Request(","github","render","broker","alpaca","interactivebrokers","tradier","order(","place_order","update_file","create_file")
 
 def finding(code,severity,message,repairable=False):
     return {"code":code,"severity":severity,"message":message,"repairable":repairable}
@@ -57,7 +57,7 @@ def audit_holdout():
 
 def main():
     bars=sys.argv[1] if len(sys.argv)>1 else "/tmp/b27b_bars.csv"
-    findings=audit_bars(bars)+audit_source()+audit_holdout()
+    findings=audit_permissions()+audit_bars(bars)+audit_source()+audit_holdout()
     sev=Counter(x["severity"] for x in findings)
     report={"agent":"JARVIS","time":time.time(),"findings":findings,"counts":dict(sev)}
     path=os.getenv("B27B_JARVIS_REPORT","/tmp/b27b_jarvis_report.json")
