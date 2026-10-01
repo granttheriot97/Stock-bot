@@ -39,7 +39,11 @@ def main():
     years=os.getenv("B27B_YEARS","10");cost=os.getenv("B27B_COST_BPS","15");mem="research/data/sp500_ticker_start_end.csv";bars="/tmp/b27b_bars.csv"
     stage("former_probe","python research/former_data_probe.py",[mem],[],years,1)
     stage("market_fetch",f'python research/fetch_market_data.py --former-plus-default --resume --years "{years}" --out {bars}',[mem],[bars],years,2)
-    stage("universe_audit",f"python research/universe_audit.py --bars {bars}",[mem,bars],[],years,0)\n    stage("jarvis_audit",f"python research/jarvis.py {bars}",[bars,"research/fetch_market_data.py","research/cross_sectional.py","research/jarvis.py","research/jarvis_policy.json"],["/tmp/b27b_jarvis_report.json"],years+"|"+cost,0)
+    stage("universe_audit",f"python research/universe_audit.py --bars {bars}",[mem,bars],[],years,0)\n    stage("jarvis_security_tests","python research/tests/test_jarvis_security.py",["research/jarvis.py","research/jarvis_policy.json","research/jarvis_supervisor.py"],[],years+"|"+cost,0)
+    stage("jarvis_supervisor","python research/jarvis_supervisor.py",["research/jarvis.py","research/jarvis_policy.json","research/jarvis_supervisor.py"],[],years+"|"+cost,0)
+    stage("jarvis_audit_log_start","python research/jarvis_audit_log.py start",["research/jarvis.py","research/jarvis_policy.json"],[],years+"|"+cost,0)
+    stage("jarvis_audit",f"python research/jarvis.py {bars}",[bars,"research/fetch_market_data.py","research/cross_sectional.py","research/jarvis.py","research/jarvis_policy.json"],["/tmp/b27b_jarvis_report.json"],years+"|"+cost,0)
+    stage("jarvis_audit_log_complete","python research/jarvis_audit_log.py complete",["/tmp/b27b_jarvis_report.json"],[],years+"|"+cost,0)
     stage("multi_strategy",f"python research/multi_strategy.py {bars}",[bars],[],cost,0)
     stage("cross_sectional",f"B27B_SKIP_RESAMPLING=1 python research/cross_sectional.py {bars}",[bars,mem],[],cost,0)
     print("B27B_PIPELINE_COMPLETE",flush=True)
