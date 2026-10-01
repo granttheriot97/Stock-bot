@@ -51,7 +51,7 @@ function renderMarketHistory(rows){
 function renderAvailableMarkets(s,m,p){
  const targets=(s.available_markets&&s.available_markets.length?s.available_markets:s.active_targets)||[];const box=document.querySelector("#availableMarkets");if(!box)return;
  const rows=targets.map(t=>{const current=t.slug===m.slug;const up=t.long_quote??(current?m.long_quote:null),down=t.short_quote??(current?m.short_quote:null),pair=t.pair_cost??(current?m.pair_cost:null),edge=t.gross_pair_edge??(current?m.gross_pair_edge:null);
- const searchUrl="https://polymarket.us/search?q="+encodeURIComponent(t.slug||t.title||"Bitcoin Up Down");
+ const eventSlug=(t.slug||"").replace(/^cpc-/,"");const searchUrl=eventSlug?"https://polymarket.us/event/"+encodeURIComponent(eventSlug):"https://polymarket.us/";
  return '<div class="historyrow"><div><b>'+(t.title||t.slug||"BTC Up/Down")+'</b><small>'+(t.duration||"")+" • "+((t.state&&t.state!=="discovered")?t.state:(current?(m.state||"ACTIVE"):"DISCOVERED"))+'</small></div><span>UP '+(up==null?"—":"$"+Number(up).toFixed(3))+'</span><span>DOWN '+(down==null?"—":"$"+Number(down).toFixed(3))+'</span><span>Pair '+(pair==null?"—":"$"+Number(pair).toFixed(3))+'</span><span>Edge '+(edge==null?"—":((Number(edge)>=0?"+":"")+(Number(edge)*100).toFixed(2)+"¢"))+'</span><a href="'+searchUrl+'" target="_blank" rel="noopener">Open Market</a></div>'}).join("");
  box.innerHTML=rows||'<p class="muted">No compatible markets discovered right now.</p>';
 }
