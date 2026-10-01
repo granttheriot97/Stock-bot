@@ -57,6 +57,6 @@ def main():
                 if te:out.append((te,bh));wins+=int(te["return"]>bh)
             if not out:continue
             pos=sum(x[0]["return"]>0 for x in out);avg=sum(x[0]["return"] for x in out)/len(out);sh=sum(x[0]["sharpe"] for x in out)/len(out);dd=min(x[0]["dd"] for x in out);tr=sum(x[0]["trades"] for x in out);bh=sum(x[1] for x in out)/len(out)
-            passes=pos>=3 and sh>.5 and tr>=20 and dd>-.25 and wins>=2
+            passes=pos>=3 and avg>0 and sh>.5 and tr>=20 and dd>-.25 and wins>=3
             print(f"{sym},{name},{len(out)},{pos},{avg:.6f},{sh:.3f},{dd:.6f},{tr},{bh:.6f},{wins},{passes}")
 if __name__=="__main__":main()
