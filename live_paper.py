@@ -43,6 +43,9 @@ def probe():
    if target is None or time.time()-last_discovery>60:
     ranked=choose(obj(c.search.query({"query":"bitcoin up down"})))
     if not ranked: ranked=choose(obj(c.search.query({"query":"bitcoin"})))
+    # Search results can lag contract rotation; explicitly try the current UTC 15-minute slug.
+    now=datetime.datetime.now(datetime.timezone.utc);slot=(now.minute//15)*15;current_slug=f"cpc-btc-updown-15m-{now.strftime('%Y-%m-%d')}-{now.hour:02d}{slot:02d}z"
+    if not any(x[1]==current_slug for x in ranked):ranked.insert(0,(300,current_slug,"BTC Up or Down: 15 min"))
     if not ranked:raise RuntimeError("No active short-duration BTC UP/DOWN candidate found; refusing to substitute an unrelated BTC market")
     # Only touch one candidate per cycle. Never fan out across the search result.
     live=[x for x in ranked if active_slug(x[1])]
