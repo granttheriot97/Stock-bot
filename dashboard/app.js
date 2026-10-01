@@ -1,5 +1,5 @@
 const stages=[["01","Archive replay","5,858,293 records verified"],["02","Wallet reconstruction","Two-sided BUY behavior reconstructed"],["03","Inventory reconciliation","12,481 markets clean for merge coverage"],["04","Clean-market simulation","+$311,660 gross reconstructed pair edge"],["05","Cost sensitivity","Historical edge survives through 0.75¢ modeled drag"],["06","Condition analysis","Market behavior associations measured"],["07","Chronological regime test","Later 20% weakness identified"],["08","Regime-shift diagnosis","Behavior changes compared"],["09","Frozen-filter validation","Earlier thresholds tested on later period"],["10","Chronological stress","9 of 10 deciles positive"],["11","Execution/cost stress","Break-even cost ≈ 0.841¢/paired share"],["12","Final historical validation","Advanced to live-data paper testing only"]];document.querySelector("#stages").innerHTML=stages.map(x=>'<div class="stage"><div class="n">'+x[0]+'</div><div><b>'+x[1]+'</b><small>'+x[2]+'</small></div><div class="done">COMPLETE</div></div>').join("");const vals=[.013531,.018401,.002968,.003108,.007069,.022717,.024152,.015523,.004586,-.012046],mx=Math.max(...vals.map(Math.abs));document.querySelector("#bars").innerHTML=vals.map((v,i)=>'<div class="barrow"><span>D'+(i+1)+'</span><div class="track"><div class="fill '+(v<0?'neg':'')+'" style="width:'+Math.max(5,Math.abs(v)/mx*100)+'%"></div></div><b class="'+(v<0?'bad':'good')+'">'+(v>=0?'+':'')+(v*100).toFixed(2)+'¢</b></div>').join("");
-const LIVE="https://b27b-live-paper-probe.onrender.com";function money(v){return v==null?"—":"$"+Number(v).toFixed(2)}function cents(v){return v==null?"—":(Number(v)*100).toFixed(2)+"¢"}let decisionData=[],decisionFilter="all";
+const LIVE="https://b27b-live-paper-probe.onrender.com";const ARCHIVE="https://raw.githubusercontent.com/granttheriot97/Stock-bot/main/paper_history/decisions.jsonl";function money(v){return v==null?"—":"$"+Number(v).toFixed(2)}function cents(v){return v==null?"—":(Number(v)*100).toFixed(2)+"¢"}let decisionData=[],archivedDecisionData=[],decisionFilter="all";
 function decisionExplanation(x){
   const up=Number(x.long_quote),down=Number(x.short_quote),pair=Number(x.pair_cost),edge=Number(x.gross_pair_edge),threshold=Number(x.threshold??0.01);
   if(x.long_quote==null||x.short_quote==null||x.pair_cost==null||x.gross_pair_edge==null||!Number.isFinite(pair)||!Number.isFinite(edge)||!Number.isFinite(up)||!Number.isFinite(down)){
@@ -37,12 +37,25 @@ function renderControlRoom(s,m,p){
  document.querySelector("#milestone").textContent=obs.toLocaleString()+" / 10,000";document.querySelector("#milestoneBar").style.width=Math.min(100,obs/100)+"%";document.querySelector("#milestoneDetail").textContent=Math.max(0,10000-obs).toLocaleString()+" observations to milestone";
  const age=s.last_update?Math.max(0,Date.now()/1000-s.last_update):Infinity;document.querySelector("#healthEngine").textContent=age>90?"OFFLINE":(s.error||age>30?"DEGRADED":"ONLINE");document.querySelector("#healthData").textContent=m.state==="MARKET_STATE_OPEN"?(age<=30?"LIVE":"STALE"):"ROTATING / WAITING";document.querySelector("#healthLast").textContent=Number.isFinite(age)?Math.round(age)+" sec ago":"—";document.querySelector("#sessionObs").textContent=obs.toLocaleString();document.querySelector("#healthApi").textContent=s.error?"ERROR":"OK";document.querySelector("#archiveHealth").textContent="Archive verification pending";const h=s.health||{};document.querySelector("#healthRestart").textContent=h.restart_id||"—";document.querySelector("#healthErrors").textContent=h.consecutive_errors??0;document.querySelector("#healthRateLimits").textContent=h.rate_limit_errors??0;document.querySelector("#healthRotations").textContent=h.market_rotations??0;
  document.querySelector("#experimentState").textContent=obs<10000?"COLLECTING DATA":"MILESTONE REACHED";
- renderEdgeDistribution(decisionData);renderMarketHistory(decisionData);
+ renderEdgeDistribution(decisionData);renderMarketHistory(mergeHistory(archivedDecisionData,decisionData));
 }
 function renderEdgeDistribution(rows){
  const bins=[["≤ -1¢",-Infinity,-.01],["-1 to 0¢",-.01,0],["0 to +1¢",0,.01],["≥ +1¢",.01,Infinity]],counts=[0,0,0,0];
  rows.forEach(x=>{if(x.gross_pair_edge==null)return;const e=Number(x.gross_pair_edge);if(!Number.isFinite(e))return;if(e<=-.01)counts[0]++;else if(e<0)counts[1]++;else if(e<.01)counts[2]++;else counts[3]++});
  const mx=Math.max(1,...counts);document.querySelector("#edgeDistribution").innerHTML=bins.map((b,i)=>'<div class="edgebin"><span>'+b[0]+'</span><div class="edgebar"><i style="width:'+(counts[i]/mx*100)+'%"></i></div><b>'+counts[i]+'</b></div>').join("");
+}
+function mergeHistory(a,b){
+ const out=[],seen=new Set();
+ [...(a||[]),...(b||[])].forEach(x=>{const k=[x.ts,x.slug,x.pair_cost,x.result].join("|");if(!seen.has(k)){seen.add(k);out.push(x)}});
+ return out;
+}
+async function refreshArchive(){
+ try{
+  const r=await fetch(ARCHIVE+"?v="+Date.now(),{cache:"no-store"});if(!r.ok)throw Error("archive HTTP "+r.status);
+  const txt=await r.text();archivedDecisionData=txt.split(/\r?\n/).filter(Boolean).map(line=>{try{return JSON.parse(line)}catch{return null}}).filter(Boolean);
+  const ah=document.querySelector("#archiveHealth");if(ah)ah.textContent=archivedDecisionData.length.toLocaleString()+" archived observations";
+  renderMarketHistory(mergeHistory(archivedDecisionData,decisionData));
+ }catch(e){const ah=document.querySelector("#archiveHealth");if(ah)ah.textContent="Archive unavailable";console.warn(e)}
 }
 function renderMarketHistory(rows){
  const map={};rows.forEach(x=>{const k=x.slug||"Unknown";if(!map[k])map[k]={n:0,q:0,best:-Infinity,last:0};const z=map[k];z.n++;if(x.result==="qualifying")z.q++;const e=x.gross_pair_edge==null?NaN:Number(x.gross_pair_edge);if(Number.isFinite(e))z.best=Math.max(z.best,e);z.last=Math.max(z.last,Number(x.ts)||0)});
