@@ -1,0 +1,49 @@
+name: Build B27B daily paper report
+on:
+  schedule:
+    - cron: "10 6 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build report from persistent archive
+        run: |
+          python - <<'PY'
+          import json,pathlib,datetime,collections
+          src=pathlib.Path("paper_history/decisions.jsonl")
+          rows=[]
+          if src.exists():
+              for line in src.read_text().splitlines():
+                  try: rows.append(json.loads(line))
+                  except: pass
+          markets={x.get("slug") for x in rows if x.get("slug")}
+          q=[x for x in rows if x.get("result")=="qualifying"]
+          r=[x for x in rows if x.get("result")=="rejected"]
+          edges=[float(x["gross_pair_edge"]) for x in rows if x.get("gross_pair_edge") is not None]
+          day=datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+          report={"date_utc":day,"archived_observations":len(rows),"markets_covered":len(markets),
+                  "qualifying_signals":len(q),"rejected":len(r),
+                  "qualification_rate":round(len(q)/len(rows),6) if rows else 0,
+                  "best_gross_edge":max(edges) if edges else None,
+                  "note":"Archive-derived research report. Paper only; not evidence of future profitability."}
+          out=pathlib.Path("paper_history/daily_reports");out.mkdir(parents=True,exist_ok=True)
+          (out/(day+".json")).write_text(json.dumps(report,indent=2)+"\n")
+          md="# B27B Daily Paper Report — "+day+"\n\n"
+          md+=f"- Archived observations: {report['archived_observations']:,}\n- Markets covered: {report['markets_covered']:,}\n- Qualifying signals: {report['qualifying_signals']:,}\n- Rejected: {report['rejected']:,}\n- Qualification rate: {report['qualification_rate']:.2%}\n"
+          md+=("- Best gross edge: "+(f"{report['best_gross_edge']*100:.2f}¢" if report['best_gross_edge'] is not None else "n/a")+"\n\nPaper-only research report.\n")
+          (out/(day+".md")).write_text(md)
+          print(json.dumps(report))
+          PY
+      - name: Commit report
+        run: |
+          if git diff --quiet -- paper_history/daily_reports; then exit 0; fi
+          git config user.name "b27b-paper-reporter"
+          git config user.email "actions@users.noreply.github.com"
+          git add paper_history/daily_reports
+          git commit -m "Add B27B daily paper report"
+          git pull --rebase origin main
+          git push
