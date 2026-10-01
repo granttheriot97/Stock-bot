@@ -44,19 +44,27 @@ def test(rows,name,start=200):
     return {"return":curve-1,"sharpe":mu/math.sqrt(var)*math.sqrt(252) if var>0 else 0,"dd":dd,"trades":trades}
 def buyhold(rows,start):
     return rows[-1]["close"]/rows[start]["close"]-1
+def benchmark(rows,start_ts,end_ts):
+    w=[r for r in rows if start_ts<=r["timestamp"]<=end_ts]
+    return None if len(w)<2 else w[-1]["close"]/w[0]["close"]-1
 def main():
     p=argparse.ArgumentParser();p.add_argument("csv");a=p.parse_args();data=load(a.csv);names=["momentum","mean_reversion","breakout","relative_strength"]
-    print("symbol,strategy,folds,positive_folds,avg_test_return,avg_sharpe,worst_drawdown,total_trades,buyhold_return,beats_buyhold_folds,passes")
+    print("symbol,strategy,folds,positive_folds,avg_test_return,compound_oos_return,min_fold_return,avg_sharpe,worst_drawdown,total_trades,asset_buyhold_return,spy_return,beats_asset_folds,beats_spy_folds,passes")
+    spy=data.get("SPY",[])
     for sym,rows in sorted(data.items()):
         if len(rows)<MIN_BARS:continue
         cuts=[int(len(rows)*x) for x in (.55,.65,.75,.85)]
         for name in names:
-            out=[];wins=0
+            out=[]
             for cut in cuts:
                 end=min(len(rows),cut+int(len(rows)*.10));segment=rows[max(0,cut-200):end];start=min(200,len(segment)-2);te=test(segment,name,start);bh=buyhold(segment,start)
-                if te:out.append((te,bh));wins+=int(te["return"]>bh)
+                sbh=benchmark(spy,segment[start]["timestamp"],segment[-1]["timestamp"]) if spy else None
+                if te and sbh is not None:out.append((te,bh,sbh))
             if not out:continue
-            pos=sum(x[0]["return"]>0 for x in out);avg=sum(x[0]["return"] for x in out)/len(out);sh=sum(x[0]["sharpe"] for x in out)/len(out);dd=min(x[0]["dd"] for x in out);tr=sum(x[0]["trades"] for x in out);bh=sum(x[1] for x in out)/len(out)
-            passes=pos>=3 and avg>0 and sh>.5 and tr>=20 and dd>-.25 and wins>=3
-            print(f"{sym},{name},{len(out)},{pos},{avg:.6f},{sh:.3f},{dd:.6f},{tr},{bh:.6f},{wins},{passes}")
+            rs=[x[0]["return"] for x in out];pos=sum(r>0 for r in rs);avg=sum(rs)/len(rs);compound=math.prod(1+r for r in rs)-1;minfold=min(rs)
+            sh=sum(x[0]["sharpe"] for x in out)/len(out);dd=min(x[0]["dd"] for x in out);tr=sum(x[0]["trades"] for x in out)
+            bh=sum(x[1] for x in out)/len(out);sbh=sum(x[2] for x in out)/len(out)
+            wins=sum(x[0]["return"]>x[1] for x in out);spywins=sum(x[0]["return"]>x[2] for x in out)
+            passes=pos>=3 and avg>0 and compound>0 and sh>.5 and tr>=20 and dd>-.25 and wins>=3 and spywins>=3
+            print(f"{sym},{name},{len(out)},{pos},{avg:.6f},{compound:.6f},{minfold:.6f},{sh:.3f},{dd:.6f},{tr},{bh:.6f},{sbh:.6f},{wins},{spywins},{passes}")
 if __name__=="__main__":main()
