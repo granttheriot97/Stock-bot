@@ -1,10 +1,26 @@
 {
-  "mode": "paper-only",
-  "starting_cash_usd": 100,
-  "created_at": "2026-10-01T03:00:00Z",
-  "markets_completed": 0,
-  "observations_archived": 0,
-  "qualifying_events": [],
-  "market_summaries": [],
-  "note": "Durable forward-test checkpoint. Updated periodically; not every polling tick."
+  "archived_at": "2026-10-01T06:16:48.280187+00:00",
+  "engine_started_at": 1790835242.355511,
+  "last_update": 1790835405.9314296,
+  "status": "market rollover; retrying discovery",
+  "health": {
+    "restart_id": "1790835242",
+    "last_success": null,
+    "last_error": 1790835405.931432,
+    "consecutive_errors": 21,
+    "rate_limit_errors": 0,
+    "market_rotations": 36
+  },
+  "session": {
+    "observations": 0,
+    "opportunities": 0,
+    "confirmed_orders": 0,
+    "unfilled_orders": 0,
+    "realized_pnl": 0.0,
+    "markets_seen": []
+  },
+  "archive": {
+    "new_decisions_this_run": 0,
+    "total_decision_lines": 269
+  }
 }
