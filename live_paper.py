@@ -2,7 +2,7 @@ import json,os,time,threading,re,datetime
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
 STARTED_AT=time.time()
-STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":10,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"bbo-authoritative-paper-model","paper_fills_enabled":True,"rule":"use documented BBO for conservative paper execution; raw book retained as diagnostic only"},"paper_orders":[],"paper_fills":[],"max_position_usd":10.0,"note":"BBO-authoritative conservative paper execution; raw order book is diagnostic; real orders disabled"}}
+STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":10,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"bbo-authoritative-paper-model","paper_fills_enabled":True,"rule":"use documented BBO for conservative paper execution; raw book retained as diagnostic only"},"paper_orders":[],"paper_fills":[],"pending_orders":{},"unfilled_orders":0,"confirmed_orders":0,"max_position_usd":10.0,"modeled_cost_per_share":0.001,"note":"two-step BBO-confirmed paper execution with modeled costs; raw order book diagnostic only; real orders disabled"}}
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -91,20 +91,30 @@ def probe():
      p["execution_snapshots"]=(p["execution_snapshots"]+[snap])[-100:];p["execution_snapshot_count"]+=1;last_book_sample[target["slug"]]=time.time()
      print(json.dumps({"execution_snapshot":snap}),flush=True)
     except Exception as be:
-     p["last_execution_snapshot_error"]=repr(be)[:240]
+     p["last_execution_snapshot_error"]=repr(be)[:240];last_book_sample[target["slug"]]=time.time()
    p["observations"]+=1;p["runtime_seconds"]=round(time.time()-STARTED_AT,1);p["observations_per_minute"]=round(p["observations"]/max((time.time()-STARTED_AT)/60,1/60),2);p["last_pair_cost"]=pair;p["last_gross_pair_edge"]=edge
    if pair is not None and (p["best_pair_cost"] is None or pair<p["best_pair_cost"]):p["best_pair_cost"]=pair
    if edge is not None and (p["best_gross_edge"] is None or edge>p["best_gross_edge"]):p["best_gross_edge"]=edge
    if target["slug"] not in p["markets_seen"]:p["markets_seen"]=(p["markets_seen"]+[target["slug"]])[-20:]
    decision={"ts":time.time(),"slug":target["slug"],"long_quote":longq,"short_quote":shortq,"pair_cost":pair,"gross_pair_edge":edge,"threshold":0.01,"result":"qualifying" if edge is not None and edge>=0.01 else "rejected","reason":"gross pair edge met threshold" if edge is not None and edge>=0.01 else "gross pair edge below threshold"}
    p["decision_log"]=(p["decision_log"]+[decision])[-2000:]
-   # Conservative fake execution: only qualifying paired signals, capped at $10; no real order API is called.
-   if decision["result"]=="qualifying" and p["execution_semantics"].get("paper_fills_enabled") and pair>0:
-    budget=min(p["max_position_usd"],p["cash"]);shares=round(budget/pair,4) if budget>0 else 0
-    if shares>0:
-     cost=round(shares*pair,4);payout=round(shares,4);profit=round(payout-cost,4)
-     fill={"ts":time.time(),"slug":target["slug"],"shares_each_side":shares,"up_px":longq,"down_px":shortq,"pair_cost":pair,"cash_cost":cost,"locked_payout":payout,"locked_gross_pnl":profit,"model":"BBO paired paper fill"}
-     p["cash"]=round(p["cash"]-cost+payout,4);p["realized_pnl"]=round(p["realized_pnl"]+profit,4);p["simulated_trades"]+=1;p["paper_fills"]=(p["paper_fills"]+[fill])[-200:]
+   # Two-step paper execution: a signal creates a pending intent; only a later qualifying BBO can confirm it.
+   pending=p["pending_orders"].get(target["slug"])
+   net_edge=round(edge-p["modeled_cost_per_share"],4)
+   if pending:
+    if decision["result"]=="qualifying" and net_edge>0 and pair<=pending["max_pair_cost"]:
+     budget=min(p["max_position_usd"],p["cash"]);shares=round(budget/pair,4) if budget>0 else 0
+     if shares>0:
+      cost=round(shares*pair,4);modeled_cost=round(shares*p["modeled_cost_per_share"],4);payout=round(shares,4);profit=round(payout-cost-modeled_cost,4)
+      fill={"ts":time.time(),"created_ts":pending["created_ts"],"confirmation_delay_seconds":round(time.time()-pending["created_ts"],2),"slug":target["slug"],"shares_each_side":shares,"up_px":longq,"down_px":shortq,"pair_cost":pair,"cash_cost":cost,"modeled_cost":modeled_cost,"locked_payout":payout,"locked_net_pnl":profit,"model":"two-step BBO-confirmed paired paper fill"}
+      p["cash"]=round(p["cash"]-cost-modeled_cost+payout,4);p["realized_pnl"]=round(p["realized_pnl"]+profit,4);p["simulated_trades"]+=1;p["confirmed_orders"]+=1;p["paper_fills"]=(p["paper_fills"]+[fill])[-200:];p["pending_orders"].pop(target["slug"],None)
+    else:
+     pending["checks"]+=1
+     if pending["checks"]>=1:
+      pending["status"]="unfilled";pending["closed_ts"]=time.time();pending["reason"]="qualifying edge did not survive next BBO observation";p["paper_orders"]=(p["paper_orders"]+[pending])[-200:];p["unfilled_orders"]+=1;p["pending_orders"].pop(target["slug"],None)
+   elif decision["result"]=="qualifying" and net_edge>0 and p["execution_semantics"].get("paper_fills_enabled") and pair>0:
+    intent={"created_ts":time.time(),"slug":target["slug"],"signal_pair_cost":pair,"signal_gross_edge":edge,"signal_net_edge_after_modeled_cost":net_edge,"max_pair_cost":pair,"checks":0,"status":"pending_confirmation"}
+    p["pending_orders"][target["slug"]]=intent;p["paper_orders"]=(p["paper_orders"]+[intent.copy()])[-200:]
 
    if edge is not None and edge>=0.01:
     p["opportunities"]+=1
