@@ -1,0 +1,15 @@
+{
+  "mode": "paper_only",
+  "venue": "Polymarket US",
+  "target_market": "BTC Up or Down 15m",
+  "fallback_market": "BTC Up or Down 60m",
+  "starting_paper_cash_usd": 100,
+  "max_position_usd": 10,
+  "max_unmatched_usd": 5,
+  "max_daily_loss_usd": 10,
+  "required_pair_edge_usd": 0.01,
+  "stale_data_seconds": 5,
+  "real_orders": false,
+  "credentials_required": false,
+  "phase": "live_data_integration"
+}
