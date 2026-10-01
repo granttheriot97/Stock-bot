@@ -33,7 +33,7 @@ def main():
         timing[bucket].append(x)
     buckets={}
     for k,v in timing.items():
-        es=[float(x["gross_pair_edge"]) for x in v]
+        es=[float(x["gross_pair_edge"]) for x in v if x.get("gross_pair_edge") is not None]
         buckets[k]={"observations":len(v),"qualifying":sum(x.get("result")=="qualifying" for x in v),
                     "mean_edge":round(statistics.fmean(es),6) if es else None,
                     "best_edge":max(es) if es else None}
