@@ -15,9 +15,12 @@ def fetch(symbol,years=10):
         raw=q.get("close",[None]*len(ts))[i]; ac=adj[i] if i<len(adj) else None
         vals=[q.get(k,[None]*len(ts))[i] for k in ("open","high","low","close","volume")]
         if any(x is None for x in vals) or raw in (None,0) or ac is None:continue
+        # Use adjusted close for return continuity, but do not apply the
+        # dividend-adjustment factor to volume. Dividend adjustments are not
+        # share-count changes, so scaling volume by that factor distorts data.
         factor=ac/raw
         o,h,l,c,v=vals
-        rows.append([datetime.datetime.fromtimestamp(t,datetime.timezone.utc).date().isoformat(),symbol,o*factor,h*factor,l*factor,ac,v/factor if factor else v])
+        rows.append([datetime.datetime.fromtimestamp(t,datetime.timezone.utc).date().isoformat(),symbol,o*factor,h*factor,l*factor,ac,v])
     return rows
 def main():
     p=argparse.ArgumentParser();p.add_argument("--symbols",default=",".join(DEFAULT));p.add_argument("--years",type=int,default=10);p.add_argument("--out",default="research/bars.csv");a=p.parse_args()
