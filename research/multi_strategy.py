@@ -32,21 +32,38 @@ def signal(name,c,v,i):
         r20,r100=c[i]/c[i-20]-1,c[i]/c[i-100]-1;return 1 if r20>0 and r100>0 else -1 if r20<0 and r100<0 else 0
     return 0
 def test(rows,name,start=200):
-    c=[x["close"] for x in rows];v=[x["volume"] for x in rows];rets=[];curve=peak=1.;dd=0.;trades=0;last=0
-    for i in range(max(200,start),len(rows)-1):
-        s=signal(name,c,v,i)
-        if not s:last=0;continue
-        net=s*(c[i+1]/c[i]-1)-(COST_BPS/10000 if s!=last else 0);rets.append(net);curve*=1+net;peak=max(peak,curve);dd=min(dd,curve/peak-1)
-        if s!=last:trades+=1
-        last=s
+    """Generate at close t, execute at open t+1, and hold open-to-open.
+
+    COST_BPS is charged per one-way unit of turnover: entry/exit each cost once
+    and a direct long-to-short flip costs twice. Flat days remain in the daily
+    return series so Sharpe is annualized on elapsed trading days, not only on
+    days when the strategy happens to have exposure.
+    """
+    c=[x["close"] for x in rows];o=[x["open"] for x in rows];v=[x["volume"] for x in rows]
+    rets=[];trades=0;position=0;cost=COST_BPS/10000
+    for i in range(max(200,start),len(rows)-2):
+        target=signal(name,c,v,i)
+        turnover=abs(target-position)
+        gross=target*(o[i+2]/o[i+1]-1)
+        rets.append(gross-cost*turnover)
+        if turnover:trades+=1
+        position=target
     if not rets:return None
+    # Mark the terminal portfolio flat so an open position cannot avoid its
+    # final exit cost merely because the test window ended.
+    if position:
+        rets[-1]-=cost*abs(position);trades+=1
+    curve=peak=1.;dd=0.
+    for r in rets:
+        curve*=1+r;peak=max(peak,curve);dd=min(dd,curve/peak-1)
     mu=sum(rets)/len(rets);var=sum((x-mu)**2 for x in rets)/max(1,len(rets)-1)
     return {"return":curve-1,"sharpe":mu/math.sqrt(var)*math.sqrt(252) if var>0 else 0,"dd":dd,"trades":trades}
 def buyhold(rows,start):
-    return rows[-1]["close"]/rows[start]["close"]-1
+    # Match the strategy's first executable open and final marked open.
+    return rows[-1]["open"]/rows[start+1]["open"]-1
 def benchmark(rows,start_ts,end_ts):
     w=[r for r in rows if start_ts<=r["timestamp"]<=end_ts]
-    return None if len(w)<2 else w[-1]["close"]/w[0]["close"]-1
+    return None if len(w)<2 else w[-1]["open"]/w[0]["open"]-1
 def main():
     p=argparse.ArgumentParser();p.add_argument("csv");a=p.parse_args();data=load(a.csv);names=["momentum","mean_reversion","breakout","relative_strength"]
     print("symbol,strategy,folds,positive_folds,avg_test_return,compound_oos_return,min_fold_return,avg_sharpe,worst_drawdown,total_trades,asset_buyhold_return,spy_return,beats_asset_folds,beats_spy_folds,passes")
@@ -57,8 +74,8 @@ def main():
         for name in names:
             out=[]
             for cut in cuts:
-                end=min(len(rows),cut+int(len(rows)*.10));segment=rows[max(0,cut-200):end];start=min(200,len(segment)-2);te=test(segment,name,start);bh=buyhold(segment,start)
-                sbh=benchmark(spy,segment[start]["timestamp"],segment[-1]["timestamp"]) if spy else None
+                end=min(len(rows),cut+int(len(rows)*.10));segment=rows[max(0,cut-200):end];start=min(200,len(segment)-3);te=test(segment,name,start);bh=buyhold(segment,start)
+                sbh=benchmark(spy,segment[start+1]["timestamp"],segment[-1]["timestamp"]) if spy else None
                 if te and sbh is not None:out.append((te,bh,sbh))
             if not out:continue
             rs=[x[0]["return"] for x in out];pos=sum(r>0 for r in rs);avg=sum(rs)/len(rs);compound=math.prod(1+r for r in rs)-1;minfold=min(rs)
