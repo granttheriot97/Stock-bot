@@ -13,7 +13,9 @@ def fail(msg):
     print("B27B_JARVIS_SUPERVISOR BLOCKED "+msg,flush=True); raise SystemExit(2)
 def main():
     if os.getenv("B27B_JARVIS_ENABLED","0")!="1": fail("kill_switch")
-    expected=os.getenv("B27B_JARVIS_POLICY_SHA256","")\n    if not expected or sha(P)!=expected: fail("policy_hash_mismatch")\n    with open(P) as h: pol=json.load(h)
+    expected=os.getenv("B27B_JARVIS_POLICY_SHA256","")
+    if not expected or sha(P)!=expected: fail("policy_hash_mismatch")
+    with open(P) as h: pol=json.load(h)
     if pol.get("mode")!="read_only_auditor" or pol.get("fail_closed") is not True or not REQUIRED.issubset(set(pol.get("forbidden",[]))): fail("policy_invalid")
     tree=ast.parse(open(J).read()); imports=set()
     for n in ast.walk(tree):
