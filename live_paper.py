@@ -20,7 +20,7 @@ def choose(res):
   seen.add(slug);title=d.get("title") or d.get("question") or d.get("name") or ""
   t=(slug+" "+str(title)).lower()
   if "bitcoin" not in t and "btc" not in t:continue
-  score=(100 if "15" in t and ("min" in t or "minute" in t or "15m" in t) else 0)+(40 if ("up" in t and "down" in t) else 0)+(20 if "btc" in t else 0)
+  d15=("15m" in t or "15 min" in t or "15-minute" in t or "15 minute" in t);d60=("60m" in t or "60 min" in t or "60-minute" in t or "60 minute" in t or "1 hour" in t);updown=("up" in t and "down" in t)\n  if not updown or not (d15 or d60):continue\n  score=(200 if d15 else 100)+(20 if "btc" in t else 0)
   rank.append((score,slug,title))
  return sorted(rank,reverse=True)
 def probe():
