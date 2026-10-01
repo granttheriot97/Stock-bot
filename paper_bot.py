@@ -1,48 +1,57 @@
-import gzip,json,os,threading,urllib.request
+import gzip,json,os,threading,urllib.request,heapq
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler,HTTPServer
 URL="https://huggingface.co/datasets/gude/polymarket-wallet-activity/resolve/main/wallet_0xb27b/data/btc_5m_activity.jsonl.gz"
-S={"status":"starting reconciliation","records":0,"markets":0,"error":None,"reconciliation":{}}
+S={"status":"starting clean-market causal simulation","records":0,"markets":0,"error":None,"simulation":{}}
 def n(x):
  try:return float(x)
  except:return 0.
 def mid(r):return str(r.get("_market_slug") or r.get("slug") or r.get("conditionId") or "")
 def run():
- # Track per-market gross bought UP/DOWN and observed MERGE/REDEEM quantities.
- a=defaultdict(lambda:{"up":0.,"down":0.,"buy_usdc":0.,"merge_q":0.,"merge_usdc":0.,"redeem_q":0.,"redeem_usdc":0.,"first":None,"last":None})
+ # Per-market event lists let us preserve time ordering and avoid pairing a buy with a future buy retroactively.
+ ev=defaultdict(list); gross=defaultdict(lambda:{"u":0.,"d":0.,"m":0.})
  try:
-  req=urllib.request.Request(URL,headers={"User-Agent":"b27b-paper-research/5.0"})
+  req=urllib.request.Request(URL,headers={"User-Agent":"b27b-paper-research/6.0"})
   with urllib.request.urlopen(req,timeout=120) as raw,gzip.GzipFile(fileobj=raw) as gz:
+   seq=0
    for line in gz:
     try:r=json.loads(line)
     except:continue
-    S["records"]+=1;m=mid(r)
+    S["records"]+=1;seq+=1;m=mid(r)
     if not m:continue
-    p=a[m];t=int(n(r.get("timestamp")));p["first"]=t if p["first"] is None else min(p["first"],t);p["last"]=t if p["last"] is None else max(p["last"],t)
-    typ=str(r.get("type") or "").upper()
+    typ=str(r.get("type") or "").upper();ts=int(n(r.get("timestamp")))
     if typ=="TRADE" and str(r.get("side") or "").upper()=="BUY":
-     q=n(r.get("size"));o=str(r.get("outcome") or "").lower();p["buy_usdc"]+=n(r.get("usdcSize")) or n(r.get("price"))*q
-     if o=="up":p["up"]+=q
-     elif o=="down":p["down"]+=q
-    elif typ=="MERGE":p["merge_q"]+=n(r.get("size"));p["merge_usdc"]+=n(r.get("usdcSize")) or n(r.get("size"))
-    elif typ=="REDEEM":p["redeem_q"]+=n(r.get("size"));p["redeem_usdc"]+=n(r.get("usdcSize")) or n(r.get("size"))
-    if S["records"]%500000==0:print(json.dumps({"reconcile_progress":{"records":S["records"],"markets":len(a)}}),flush=True)
-  covered=over=0.; mk_over=mk_clean=0; residual_value=0.; residual_shares=0.; redeem=0.; merge=0.; buy=0.; examples=[]
-  for m,p in a.items():
-   paircap=min(p["up"],p["down"]);ex=max(0.,p["merge_q"]-paircap)
-   if ex>1e-6:
-    mk_over+=1;over+=ex
-    if len(examples)<10:examples.append({"market":m,"up_bought":round(p["up"],4),"down_bought":round(p["down"],4),"merge_qty":round(p["merge_q"],4),"excess_merge":round(ex,4),"redeem_qty":round(p["redeem_q"],4)})
-   else:mk_clean+=1
-   covered+=min(p["merge_q"],paircap);merge+=p["merge_usdc"];redeem+=p["redeem_usdc"];buy+=p["buy_usdc"]
-   # Quantity left after allowing merges to consume matched pairs.
-   uq=max(0.,p["up"]-p["merge_q"]);dq=max(0.,p["down"]-p["merge_q"]);residual_shares+=uq+dq
-   # At resolution, only winning residual shares can redeem; archive redemption is observed cash, reported separately.
-  S["markets"]=len(a);S["reconciliation"]={"purpose":"explain merge/inventory mismatch at market level before any final P&L claim","markets_clean_merge_coverage":mk_clean,"markets_with_merge_qty_above_observed_pair_capacity":mk_over,"merge_qty_covered_by_observed_buys":round(covered,4),"excess_merge_qty_vs_observed_pair_capacity":round(over,4),"observed_buy_cash_usd":round(buy,2),"observed_merge_cash_usd":round(merge,2),"observed_redeem_cash_usd":round(redeem,2),"residual_shares_after_gross_merge_quantities":round(residual_shares,4),"examples_of_mismatch":examples,"interpretation":"If merge quantity exceeds BUY-derived pair capacity, the archive is not a complete inventory ledger for those markets (e.g. starting inventory, missing split/transfer/history, or field semantics). Such markets must be excluded or separately modeled in a defensible strategy backtest."};S["status"]="reconciliation complete";print(json.dumps({"reconciliation_complete":S},separators=(",",":")),flush=True)
- except Exception as e:S["status"]="reconciliation error";S["error"]=repr(e);print(json.dumps({"reconciliation_error":S}),flush=True)
+     q=n(r.get("size"));o=str(r.get("outcome") or "").lower();cash=n(r.get("usdcSize")) or n(r.get("price"))*q
+     if o in ("up","down"):
+      gross[m]["u" if o=="up" else "d"]+=q
+      ev[m].append((ts,seq,o,q,cash))
+    elif typ=="MERGE":gross[m]["m"]+=n(r.get("size"))
+    if S["records"]%500000==0:print(json.dumps({"simulation_load_progress":{"records":S["records"],"markets":len(ev)}}),flush=True)
+  clean={m for m,g in gross.items() if g["m"]<=min(g["u"],g["d"])+1e-6}
+  # Causal fill replay: maintain FIFO lots; only match inventory that has already arrived.
+  pairq=paircost=edge=0.;positiveq=0.;events=0;per=[]
+  for m in clean:
+   rows=sorted(ev[m]);u=[];d=[];mq=mc=me=mp=0.
+   for ts,seq,o,q,cash in rows:
+    if q<=0:continue
+    unit=cash/q
+    heap=(u if o=="up" else d);heap.append([q,unit])
+    # Match available opposite inventory immediately; no future knowledge.
+    while u and d:
+     z=min(u[0][0],d[0][0]);cost=z*(u[0][1]+d[0][1]);e=z-cost
+     mq+=z;mc+=cost;me+=e;events+=1
+     if e>0:mp+=z
+     u[0][0]-=z;d[0][0]-=z
+     if u[0][0]<=1e-9:u.pop(0)
+     if d[0][0]<=1e-9:d.pop(0)
+   pairq+=mq;paircost+=mc;edge+=me;positiveq+=mp
+   if mq:per.append((me,m,mq,mc))
+  per.sort(reverse=True)
+  S["markets"]=len(ev);S["simulation"]={"method":"causal historical fill replay on clean markets only; pairs are formed only from BUY fills already observed by that timestamp. This measures observed-fill economics, not whether an independent bot would have received those fills.","all_markets":len(ev),"clean_markets":len(clean),"excluded_incomplete_markets":len(ev)-len(clean),"causally_paired_shares":round(pairq,4),"paired_acquisition_cost_usd":round(paircost,2),"gross_pair_edge_before_fees_rebates_usd":round(edge,2),"avg_pair_cost":round(paircost/pairq,6) if pairq else None,"avg_pair_edge_per_share":round(edge/pairq,6) if pairq else None,"positive_edge_paired_share_pct":round(100*positiveq/pairq,3) if pairq else None,"pair_events":events,"top_5_markets_by_reconstructed_edge":[{"market":m,"edge_usd":round(e,2),"paired_shares":round(q,2)} for e,m,q,c in per[:5]],"warning":"Still not a tradable-bot backtest: archive contains wallet fills, not historical order-book queue state. Next validation must model fill probability, latency, fees/rebates and unmatched inventory."};S["status"]="clean-market causal simulation complete";print(json.dumps({"clean_market_simulation_complete":S},separators=(",",":")),flush=True)
+ except Exception as e:S["status"]="simulation error";S["error"]=repr(e);print(json.dumps({"simulation_error":S}),flush=True)
 class H(BaseHTTPRequestHandler):
  def do_GET(self):
   b=json.dumps({"service":"b27b-paper-engine","mode":"paper-only","historical":S}).encode();self.send_response(200);self.send_header("Content-Type","application/json");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
  def log_message(self,*a):pass
 if __name__=="__main__":
- print("B27B PAPER ENGINE - INVENTORY RECONCILIATION",flush=True);print("Research/paper only. No wallet, private keys, or live orders.",flush=True);threading.Thread(target=run,daemon=True).start();HTTPServer(("0.0.0.0",int(os.environ.get("PORT","10000"))),H).serve_forever()
+ print("B27B PAPER ENGINE - CLEAN MARKET CAUSAL SIMULATION",flush=True);print("Research/paper only. No wallet, private keys, or live orders.",flush=True);threading.Thread(target=run,daemon=True).start();HTTPServer(("0.0.0.0",int(os.environ.get("PORT","10000"))),H).serve_forever()
