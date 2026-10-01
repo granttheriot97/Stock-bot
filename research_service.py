@@ -10,11 +10,15 @@ def run():
         S["status"]="complete" if p.returncode==0 else "failed";S["returncode"]=p.returncode
         lines=[x for x in p.stdout.splitlines() if x.strip()]
         results=[x for x in lines if "," in x and not x.startswith("symbol,")]
+        diagnostics=[x for x in lines if x.startswith("B27B_")]
         passes=[x for x in results if x.rstrip().endswith(",True")]
         print("B27B_RESEARCH_STATUS",S["status"],"ROWS",len(results),"PASSES",len(passes),flush=True)
         print("B27B_PASSING_RESULTS_BEGIN",flush=True)
         for x in passes: print(x,flush=True)
         print("B27B_PASSING_RESULTS_END",flush=True)
+        print("B27B_DIAGNOSTICS_BEGIN",flush=True)
+        for x in diagnostics: print(x,flush=True)
+        print("B27B_DIAGNOSTICS_END",flush=True)
         print("B27B_ALL_RESULTS_BEGIN",flush=True)
         for x in results: print(x,flush=True)
         print("B27B_ALL_RESULTS_END",flush=True)
