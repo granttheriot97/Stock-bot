@@ -27,6 +27,10 @@ def archive_decision(d):
 def archive_order(o):
  row={"order_id":o.get("order_id"),"strategy_version":o.get("strategy_version") or STRATEGY_VERSION,"git_commit":o.get("git_commit"),"status":o.get("status"),"market_slug":o.get("slug"),"created_at":datetime.datetime.fromtimestamp(o["created_ts"],datetime.timezone.utc).isoformat() if o.get("created_ts") else None,"closed_at":datetime.datetime.fromtimestamp(o["closed_ts"],datetime.timezone.utc).isoformat() if o.get("closed_ts") else None,"fill_pair_cost":o.get("fill_pair_cost"),"locked_net_pnl":o.get("locked_net_pnl"),"payload":o}
  supabase_write("paper_orders",row,"resolution=merge-duplicates,return=minimal")
+def archive_health():
+ h=STATE.get("health",{});p=STATE.get("paper",{})
+ row={"restart_id":h.get("restart_id"),"strategy_version":STRATEGY_VERSION,"git_commit":GIT_COMMIT,"status":STATE.get("status"),"last_success":datetime.datetime.fromtimestamp(h["last_success"],datetime.timezone.utc).isoformat() if h.get("last_success") else None,"last_error":datetime.datetime.fromtimestamp(h["last_error"],datetime.timezone.utc).isoformat() if isinstance(h.get("last_error"),(int,float)) else None,"consecutive_errors":h.get("consecutive_errors",0),"rate_limit_errors":h.get("rate_limit_errors",0),"market_rotations":h.get("market_rotations",0),"observations":p.get("observations",0),"markets_seen":p.get("markets_seen",[])}
+ supabase_write("engine_health",row)
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -134,7 +138,7 @@ def probe():
     except:pass
    decision={"ts":decision_ts,"strategy_version":STRATEGY_VERSION,"git_commit":GIT_COMMIT,"slug":target["slug"],"duration":target.get("duration"),"seconds_into_market":market_elapsed,"long_quote":longq,"short_quote":shortq,"quote_imbalance":round(longq-shortq,4),"pair_cost":pair,"gross_pair_edge":edge,"threshold":0.01,"result":"qualifying" if edge is not None and edge>=0.01 else "rejected","reason":"gross pair edge met threshold" if edge is not None and edge>=0.01 else "gross pair edge below threshold"}
    p["decision_log"]=(p["decision_log"]+[decision])[-2000:]
-   archive_decision(decision)
+   archive_decision(decision)\n   if p["observations"]%6==0: archive_health()
    # Two-step paper execution: a signal creates a pending intent; only a later qualifying BBO can confirm it.
    pending=p["pending_orders"].get(target["slug"])
    net_edge=round(edge-p["modeled_cost_per_share"],4)
