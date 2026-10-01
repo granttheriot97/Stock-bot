@@ -88,4 +88,9 @@ def main():
     path=os.getenv("B27B_JARVIS_REPORT","/tmp/b27b_jarvis_report.json")
     with open(path,"w") as h:json.dump(report,h,indent=2)
     print("B27B_JARVIS_REPORT "+json.dumps(report,separators=(",",":")),flush=True)
-    # Critical scientific or data-integrity findings stop downstream experiments.\n    if sev["critical"]:\n        print("B27B_JARVIS_STATUS REVIEW_REQUIRED critical="+str(sev["critical"]),flush=True)\n        raise SystemExit(2)\n    print("B27B_JARVIS_STATUS CLEAR",flush=True)\nif __name__=="__main__":main()
+    # Critical scientific or data-integrity findings stop downstream experiments.
+    if sev["critical"]:
+        print("B27B_JARVIS_STATUS REVIEW_REQUIRED critical="+str(sev["critical"]),flush=True)
+        raise SystemExit(2)
+    print("B27B_JARVIS_STATUS CLEAR",flush=True)
+if __name__=="__main__":main()
