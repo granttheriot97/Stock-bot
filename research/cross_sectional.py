@@ -56,8 +56,9 @@ def is_member(periods, symbol, date):
     return any(start <= date and (end is None or date <= end) for start, end in periods.get(symbol, []))
 
 
-def run_fold(data, maps, dates, start, end, membership=None):
-    candidates = sorted(symbol for symbol in data if symbol not in EXCLUDE)
+def run_fold(data, maps, dates, start, end, membership=None, removed=None):
+    removed = removed or set()
+    candidates = sorted(symbol for symbol in data if symbol not in EXCLUDE and symbol not in removed)
     cost = COST_BPS / 10000
     weights = {}
     strategy_rets = []
@@ -180,6 +181,15 @@ def print_folds(label, folds):
         )
 
 
+def build_folds(data, maps, dates, cuts, membership=None, removed=None):
+    folds = []
+    for cut in cuts:
+        end = min(len(dates), cut + int(len(dates) * 0.10))
+        if cut >= LOOKBACK and end - cut > 2:
+            folds.append(run_fold(data, maps, dates, cut, end, membership, removed))
+    return folds
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("csv")
@@ -191,19 +201,46 @@ def main():
     dates = [row["timestamp"] for row in data["SPY"]]
     cuts = [int(len(dates) * fraction) for fraction in (0.55, 0.65, 0.75, 0.85)]
     membership = load_membership(MEMBERSHIP_PATH)
-    baseline_folds = []
-    point_in_time_folds = []
-    for cut in cuts:
-        end = min(len(dates), cut + int(len(dates) * 0.10))
-        if cut >= LOOKBACK and end - cut > 2:
-            baseline_folds.append(run_fold(data, maps, dates, cut, end))
-            point_in_time_folds.append(run_fold(data, maps, dates, cut, end, membership))
+    baseline_folds = build_folds(data, maps, dates, cuts)
+    point_in_time_folds = build_folds(data, maps, dates, cuts, membership)
 
     print("symbol,strategy,folds,positive_folds,avg_test_return,compound_oos_return,min_fold_return,avg_sharpe,worst_drawdown,total_trades,asset_buyhold_return,spy_return,beats_asset_folds,beats_spy_folds,passes")
     print_result("cross_sectional_momentum_12_1_top10", summarize(baseline_folds))
     print_result("cross_sectional_momentum_12_1_top10_pit_subset", summarize(point_in_time_folds))
     print_folds("baseline", baseline_folds)
     print_folds("pit_subset", point_in_time_folds)
+
+    # Delete-one-name jackknife: diagnostics only. Each rerun uses the exact
+    # same point-in-time universe, strategy, costs, folds and fixed gate.
+    symbols = sorted(symbol for symbol in data if symbol not in EXCLUDE)
+    jackknife = []
+    for symbol in symbols:
+        result = summarize(build_folds(data, maps, dates, cuts, membership, {symbol}))
+        if result is not None:
+            jackknife.append((symbol, result))
+    if jackknife:
+        passed = sum(result["passes"] for _, result in jackknife)
+        worst_symbol, worst = min(jackknife, key=lambda item: item[1]["compound"])
+        best_symbol, best = max(jackknife, key=lambda item: item[1]["compound"])
+        print(
+            f"B27B_JACKKNIFE variants={len(jackknife)} fixed_gate_passes={passed} "
+            f"min_compound={min(result['compound'] for _, result in jackknife):.6f} "
+            f"max_compound={max(result['compound'] for _, result in jackknife):.6f} "
+            f"min_sharpe={min(result['sharpe'] for _, result in jackknife):.3f} "
+            f"worst_drawdown={min(result['drawdown'] for _, result in jackknife):.6f} "
+            f"min_asset_wins={min(result['asset_wins'] for _, result in jackknife)} "
+            f"min_spy_wins={min(result['spy_wins'] for _, result in jackknife)}"
+        )
+        print(
+            f"B27B_JACKKNIFE_WORST removed={worst_symbol} compound={worst['compound']:.6f} "
+            f"sharpe={worst['sharpe']:.3f} drawdown={worst['drawdown']:.6f} "
+            f"asset_wins={worst['asset_wins']} spy_wins={worst['spy_wins']} passes={worst['passes']}"
+        )
+        print(
+            f"B27B_JACKKNIFE_BEST removed={best_symbol} compound={best['compound']:.6f} "
+            f"sharpe={best['sharpe']:.3f} drawdown={best['drawdown']:.6f} "
+            f"asset_wins={best['asset_wins']} spy_wins={best['spy_wins']} passes={best['passes']}"
+        )
 
 
 if __name__ == "__main__":
