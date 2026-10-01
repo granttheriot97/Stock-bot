@@ -9,6 +9,28 @@ from collections import Counter,defaultdict
 EXCLUDE={"SPY","QQQ","IWM","DIA"}
 MIN_HISTORY=252
 MIN_FORMER_COVERAGE=0.90\nPOLICY_PATH=os.path.join(os.path.dirname(__file__),"jarvis_policy.json")\n# Fail-closed capability contract: analysis/reporting modules only.\nALLOWED_IMPORTS={"ast","csv","json","math","os","sys","time","collections"}\n
+def audit_policy():
+    try:
+        with open(POLICY_PATH) as h: policy=json.load(h)
+    except Exception as exc:
+        return [finding("JARVIS_POLICY_MISSING","critical","External policy unavailable: "+type(exc).__name__,False)]
+    required={"modify_own_policy","modify_own_source","modify_strategy","modify_validation_gates","execute_shell_commands","network_access","github_write","render_write","brokerage_access","place_orders","live_trading"}
+    forbidden=set(policy.get("forbidden",[]))
+    if policy.get("agent")!="JARVIS" or policy.get("mode")!="read_only_auditor" or policy.get("fail_closed") is not True or not required.issubset(forbidden):
+        return [finding("JARVIS_POLICY_INVALID","critical","External authority policy is missing required read-only restrictions.",False)]
+    return []
+
+def audit_permissions():
+    tree=ast.parse(open(__file__).read())
+    imported=set()
+    for node in ast.walk(tree):
+        if isinstance(node,ast.Import): imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node,ast.ImportFrom) and node.module: imported.add(node.module.split(".")[0])
+    forbidden=sorted(imported-ALLOWED_IMPORTS)
+    if forbidden:
+        return [finding("JARVIS_PERMISSION_VIOLATION","critical","Unapproved import(s): "+",".join(forbidden),False)]
+    return []
+
 def finding(code,severity,message,repairable=False):
     return {"code":code,"severity":severity,"message":message,"repairable":repairable}
 
