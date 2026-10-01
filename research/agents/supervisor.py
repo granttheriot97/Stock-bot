@@ -10,7 +10,16 @@ def imports(path):
   if isinstance(n,ast.Import):r.update(a.name.split(".")[0] for a in n.names)
   elif isinstance(n,ast.ImportFrom) and n.module:r.add(n.module.split(".")[0])
  return r
+def sha(path):
+ h=hashlib.sha256()
+ with open(path,"rb") as f:
+  for b in iter(lambda:f.read(1048576),b""):h.update(b)
+ return h.hexdigest()
+def fail(msg):
+ print("B27B_AGENT_SUPERVISOR BLOCKED "+msg,flush=True);raise SystemExit(2)
 def main():
+ expected=os.getenv("B27B_AGENT_POLICY_SHA256","")
+ if not expected or sha(POLICY)!=expected:fail("policy_hash_mismatch")
  p=json.load(open(POLICY))
  if not p.get("fail_closed") or p.get("live_authorization") is not False or p.get("agent_may_change_policy") is not False:raise SystemExit("B27B_AGENT_SUPERVISOR BLOCK policy")
  if set(FILES)!=set(p.get("agents",{})):raise SystemExit("B27B_AGENT_SUPERVISOR BLOCK roster")
