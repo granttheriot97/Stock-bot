@@ -1,0 +1,22 @@
+{
+  "mode": "disabled_scaffolding_only",
+  "real_orders_enabled": false,
+  "paper_only_until_explicit_user_enablement": true,
+  "venue": "Polymarket US",
+  "risk_controls": {
+    "max_order_usd": 10,
+    "max_unmatched_usd": 5,
+    "max_daily_loss_usd": 10,
+    "max_consecutive_execution_errors": 3,
+    "stale_data_kill_seconds": 15,
+    "duplicate_order_protection": true,
+    "require_open_market": true,
+    "require_positive_net_edge_after_costs": true,
+    "emergency_stop": true
+  },
+  "credentials": {
+    "required_for_live_trading": true,
+    "stored_in_repository": false
+  },
+  "note": "Inactive safety architecture only. This file cannot enable real-money trading by itself."
+}
