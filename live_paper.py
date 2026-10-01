@@ -6,9 +6,11 @@ STRATEGY_VERSION="V1"
 GIT_COMMIT=os.getenv("RENDER_GIT_COMMIT","unknown")
 STATE={"mode":"paper-only","strategy":{"version":STRATEGY_VERSION,"git_commit":GIT_COMMIT,"frozen_threshold":0.01},"started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":10,"backoff_seconds":30,"health":{"restart_id":str(int(STARTED_AT)),"last_success":None,"last_error":None,"consecutive_errors":0,"rate_limit_errors":0,"market_rotations":0},"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"bbo-authoritative-paper-model","paper_fills_enabled":True,"rule":"use documented BBO for conservative paper execution; raw book retained as diagnostic only"},"paper_orders":[],"paper_fills":[],"pending_orders":{},"next_order_id":1,"unfilled_orders":0,"confirmed_orders":0,"max_position_usd":10.0,"modeled_cost_per_share":0.001,"note":"two-step BBO-confirmed paper execution with modeled costs; raw order book diagnostic only; real orders disabled"}}
 SUPABASE_URL=os.getenv("SUPABASE_URL","").rstrip("/")
-SUPABASE_SECRET_KEY=os.getenv("SUPABASE_SECRET_KEY","")\nSTATE["supabase"]={"configured":bool(SUPABASE_URL and SUPABASE_SECRET_KEY),"connected":None,"last_success":None,"last_attempt":None,"last_error":None}
+SUPABASE_SECRET_KEY=os.getenv("SUPABASE_SECRET_KEY","")
+STATE["supabase"]={"configured":bool(SUPABASE_URL and SUPABASE_SECRET_KEY),"connected":None,"last_success":None,"last_attempt":None,"last_error":None}
 def supabase_write(table,row,prefer="return=minimal"):
- if not SUPABASE_URL or not SUPABASE_SECRET_KEY:\n  STATE["supabase"]={"configured":False,"connected":False,"last_success":None,"last_attempt":time.time(),"last_error":"Supabase environment variables missing"};return False
+ if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+  STATE["supabase"]={"configured":False,"connected":False,"last_success":None,"last_attempt":time.time(),"last_error":"Supabase environment variables missing"};return False
  try:
   data=json.dumps(row,default=str).encode()
   req=urllib.request.Request(SUPABASE_URL+"/rest/v1/"+table,data=data,method="POST",headers={"apikey":SUPABASE_SECRET_KEY,"Authorization":"Bearer "+SUPABASE_SECRET_KEY,"Content-Type":"application/json","Prefer":prefer})
