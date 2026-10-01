@@ -37,19 +37,29 @@ def active_slug(slug):
  now=datetime.datetime.now(datetime.timezone.utc)
  return start<=now<start+datetime.timedelta(minutes=mins)
 def probe():
- c=PolymarketUS();target=None;backoff=15
+ c=PolymarketUS();targets=[];target=None;backoff=15;last_discovery=0
  while True:
   try:
-   if target is None:
+   if target is None or time.time()-last_discovery>60:
     ranked=choose(obj(c.search.query({"query":"bitcoin up down"})))
     if not ranked: ranked=choose(obj(c.search.query({"query":"bitcoin"})))
     if not ranked:raise RuntimeError("No active short-duration BTC UP/DOWN candidate found; refusing to substitute an unrelated BTC market")
     # Only touch one candidate per cycle. Never fan out across the search result.
     live=[x for x in ranked if active_slug(x[1])]
     if not live:raise RuntimeError("No currently active short-duration BTC UP/DOWN market found; waiting for rotation")
-    score,slug,title=live[0];target={"slug":slug,"title":title,"score":score}
-    STATE.update(status="target selected; polling one public market",market={"slug":slug,"title":title},error=None)
-    print(json.dumps({"target_selected":target}),flush=True);time.sleep(5)
+    selected=[]
+    for duration in ("15m","60m"):
+     match=next((x for x in live if duration in x[1]),None)
+     if match:
+      score,slug,title=match;selected.append({"slug":slug,"title":title,"score":score,"duration":duration})
+    if not selected:
+     score,slug,title=live[0];selected=[{"slug":slug,"title":title,"score":score,"duration":"other"}]
+    targets=selected[:2];last_discovery=time.time()
+    if target is None or not any(x["slug"]==target.get("slug") for x in targets):target=targets[0]
+    STATE["active_targets"]=targets
+    STATE.update(status="multi-market BTC observer active",market={"slug":target["slug"],"title":target["title"]},error=None)
+    print(json.dumps({"targets_selected":targets}),flush=True);time.sleep(2)
+   target=targets[STATE["paper"]["observations"]%len(targets)] if targets else target
    bbo=obj(c.markets.bbo(target["slug"]))
    md=(bbo.get("marketData",{}) if isinstance(bbo,dict) else {})
    market_state=md.get("state")
@@ -57,7 +67,7 @@ def probe():
    if market_state!="MARKET_STATE_OPEN" or longq<=0 or shortq<=0:
     STATE.update(status="rotating; selected market is not open or has no valid quotes",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"state":market_state,"long_quote":longq,"short_quote":shortq,"pair_cost":None,"gross_pair_edge":None},error=None)
     print(json.dumps({"target_rotation":{"slug":target["slug"],"state":market_state,"reason":"not open or invalid quotes"}}),flush=True)
-    target=None;time.sleep(5);continue
+    targets=[x for x in targets if x["slug"]!=target["slug"]];target=targets[0] if targets else None;time.sleep(2);continue
    pair=round(longq+shortq,4);edge=round(1-pair,4)
    p=STATE["paper"];p["observations"]+=1;p["runtime_seconds"]=round(time.time()-STARTED_AT,1);p["observations_per_minute"]=round(p["observations"]/max((time.time()-STARTED_AT)/60,1/60),2);p["last_pair_cost"]=pair;p["last_gross_pair_edge"]=edge
    if pair is not None and (p["best_pair_cost"] is None or pair<p["best_pair_cost"]):p["best_pair_cost"]=pair
@@ -75,7 +85,7 @@ def probe():
    print(json.dumps({"paper_tick":{"slug":target["slug"],"pair_cost":pair,"gross_pair_edge":edge,"market_state":md.get("state"),"paper":STATE["paper"]}},default=str),flush=True)
    backoff=15
    if not active_slug(target["slug"]):
-    print(json.dumps({"target_rotation":{"expired":target["slug"]}}),flush=True);target=None
+    print(json.dumps({"target_rotation":{"expired":target["slug"]}}),flush=True);targets=[x for x in targets if x["slug"]!=target["slug"]];target=targets[0] if targets else None
    time.sleep(5)
   except Exception as e:
    msg=repr(e);STATE.update(status="rate-limited; backing off" if "429" in msg or "RateLimit" in msg else "probe error; retrying",last_update=time.time(),error=msg,backoff_seconds=backoff)
