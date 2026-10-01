@@ -46,6 +46,8 @@ def probe():
     if not ranked:raise RuntimeError("No active short-duration BTC UP/DOWN candidate found; refusing to substitute an unrelated BTC market")
     # Only touch one candidate per cycle. Never fan out across the search result.
     live=[x for x in ranked if active_slug(x[1])]
+    # Prefer the newest active window so a just-closed contract cannot trap rotation.
+    live=sorted(live,key=lambda x:x[1],reverse=True)
     if not live:raise RuntimeError("No currently active short-duration BTC UP/DOWN market found; waiting for rotation")
     selected=[]
     for duration in ("15m","60m"):
@@ -65,6 +67,7 @@ def probe():
    market_state=md.get("state")
    longq=float((md.get("longQuote") or {}).get("value",0) or 0);shortq=float((md.get("shortQuote") or {}).get("value",0) or 0)
    if market_state!="MARKET_STATE_OPEN" or longq<=0 or shortq<=0:
+    last_discovery=0
     STATE.update(status="rotating; selected market is not open or has no valid quotes",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"state":market_state,"long_quote":longq,"short_quote":shortq,"pair_cost":None,"gross_pair_edge":None},error=None)
     print(json.dumps({"target_rotation":{"slug":target["slug"],"state":market_state,"reason":"not open or invalid quotes"}}),flush=True)
     targets=[x for x in targets if x["slug"]!=target["slug"]];target=targets[0] if targets else None;time.sleep(2);continue
