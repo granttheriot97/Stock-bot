@@ -83,7 +83,7 @@ def probe():
      def level(x):
       if not isinstance(x,dict):return None
       px=x.get("px") or {};return {"price":float(px.get("value",0) or 0),"qty":float(x.get("qty",0) or 0)}
-     snap={"ts":time.time(),"slug":target["slug"],"top_bid":level(bids[0]) if bids else None,"top_offer":level(offers[0]) if offers else None,"bid_levels":len(bids),"offer_levels":len(offers),"transact_time":bmd.get("transactTime"),"book_request_ms":round((book_received-book_request_started)*1000,1),"bbo_to_book_ms":round((book_received-bbo_sample_time)*1000,1),"bbo_best_bid":float((md.get("bestBid") or {}).get("value",0) or 0),"bbo_best_ask":float((md.get("bestAsk") or {}).get("value",0) or 0),"post_bbo_best_bid":float((vmd.get("bestBid") or {}).get("value",0) or 0),"post_bbo_best_ask":float((vmd.get("bestAsk") or {}).get("value",0) or 0),"signal_long_quote":longq,"signal_short_quote":shortq}
+     snap={"ts":time.time(),"slug":target["slug"],"top_bid":level(bids[0]) if bids else None,"top_offer":level(offers[0]) if offers else None,"bid_levels":len(bids),"offer_levels":len(offers),"transact_time":bmd.get("transactTime"),"book_request_ms":round((book_received-book_request_started)*1000,1),"book_roundtrip_ms":round((book_received-book_request_started)*1000,1),"bbo_best_bid":float((md.get("bestBid") or {}).get("value",0) or 0),"bbo_best_ask":float((md.get("bestAsk") or {}).get("value",0) or 0),"post_bbo_best_bid":float((vmd.get("bestBid") or {}).get("value",0) or 0),"post_bbo_best_ask":float((vmd.get("bestAsk") or {}).get("value",0) or 0),"signal_long_quote":longq,"signal_short_quote":shortq}
      tt=snap.get("transact_time")
      try:
       book_dt=datetime.datetime.fromisoformat(tt.replace("Z","+00:00")) if tt else None;snap["book_age_seconds"]=round(max(0,(datetime.datetime.now(datetime.timezone.utc)-book_dt).total_seconds()),3) if book_dt else None
@@ -93,7 +93,7 @@ def probe():
       snap["displayed_spread"]=round(snap["top_offer"]["price"]-snap["top_bid"]["price"],4)
       snap["bbo_book_match"]=abs(snap["bbo_best_bid"]-snap["top_bid"]["price"])<0.0001 and abs(snap["bbo_best_ask"]-snap["top_offer"]["price"])<0.0001
       snap["mapping_class"]="stale_book" if snap["book_stale"] else ("match" if snap["bbo_book_match"] else "fresh_divergence")
-      sem=p["execution_semantics"];sem["samples"]=sem.get("samples",0)+1;sem["matches"]=sem.get("matches",0)+(1 if snap["bbo_book_match"] else 0);sem["match_rate"]=round(sem["matches"]/sem["samples"],4);sem["raw_book_diagnostic"]="agreeing" if snap["bbo_book_match"] else "divergent";sem["paper_fills_enabled"]=True
+      sem=p["execution_semantics"];sem["samples"]=sem.get("samples",0)+1;cls=snap["mapping_class"];sem["stale_samples"]=sem.get("stale_samples",0)+(1 if cls=="stale_book" else 0);sem["fresh_samples"]=sem.get("fresh_samples",0)+(1 if cls!="stale_book" else 0);sem["fresh_matches"]=sem.get("fresh_matches",0)+(1 if cls=="match" else 0);sem["fresh_divergences"]=sem.get("fresh_divergences",0)+(1 if cls=="fresh_divergence" else 0);sem["fresh_match_rate"]=round(sem["fresh_matches"]/sem["fresh_samples"],4) if sem["fresh_samples"] else None;sem["raw_book_diagnostic"]="insufficient_fresh_data" if not sem["fresh_samples"] else ("agreeing" if sem["fresh_divergences"]==0 else "fresh_divergence_observed");sem["paper_fills_enabled"]=True
      p["execution_snapshots"]=(p["execution_snapshots"]+[snap])[-100:];p["execution_snapshot_count"]+=1;last_book_sample[target["slug"]]=time.time()
      print(json.dumps({"execution_snapshot":snap}),flush=True)
     except Exception as be:
