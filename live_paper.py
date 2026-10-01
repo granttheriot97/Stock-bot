@@ -1,7 +1,7 @@
 import json,os,time,threading,re,datetime
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
-STATE={"mode":"paper-only","status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":30,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"note":"observer-first; no fills until execution model is validated"}}
+STATE={"mode":"paper-only","status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":30,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"note":"observer-first; no fills until execution model is validated"}}
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -57,7 +57,11 @@ def probe():
    if pair is not None and (p["best_pair_cost"] is None or pair<p["best_pair_cost"]):p["best_pair_cost"]=pair
    if edge is not None and (p["best_gross_edge"] is None or edge>p["best_gross_edge"]):p["best_gross_edge"]=edge
    if target["slug"] not in p["markets_seen"]:p["markets_seen"]=(p["markets_seen"]+[target["slug"]])[-20:]
-   if edge is not None and edge>=0.01:p["opportunities"]+=1
+   if edge is not None and edge>=0.01:
+    p["opportunities"]+=1
+    ev={"ts":time.time(),"slug":target["slug"],"pair_cost":pair,"gross_pair_edge":edge}
+    if not p["qualifying_events"] or p["qualifying_events"][-1].get("slug")!=ev["slug"] or p["qualifying_events"][-1].get("pair_cost")!=pair:
+     p["qualifying_events"]=(p["qualifying_events"]+[ev])[-50:]
    else:p["rejected"]+=1
    STATE.update(status="paper opportunity observer active",last_update=time.time(),market={"slug":target["slug"],"title":target["title"],"state":md.get("state"),"long_quote":longq,"short_quote":shortq,"pair_cost":pair,"gross_pair_edge":edge},error=None,backoff_seconds=30)
    print(json.dumps({"paper_tick":{"slug":target["slug"],"pair_cost":pair,"gross_pair_edge":edge,"market_state":md.get("state"),"paper":STATE["paper"]}},default=str),flush=True)
