@@ -1,5 +1,5 @@
 """External authority for B27B research agents. Agents cannot grant themselves capabilities."""
-import ast,json,os,sys
+import ast,hashlib,json,os,sys
 ROOT=os.path.dirname(__file__); POLICY=os.path.join(ROOT,"agent_policy.json")
 FILES={"FETCH":"fetch_agent.py","FRIDAY":"friday.py","VISION":"vision.py","ULTRON":"ultron.py","EDITH":"edith.py","WATCHDOG":"watchdog.py","GATEKEEPER":"gatekeeper.py"}
 NETWORK={"socket","requests","httpx","urllib","aiohttp"}
