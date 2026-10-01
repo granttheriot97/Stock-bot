@@ -8,7 +8,11 @@ from collections import Counter,defaultdict
 
 EXCLUDE={"SPY","QQQ","IWM","DIA"}
 MIN_HISTORY=252
-MIN_FORMER_COVERAGE=0.90\nPOLICY_PATH=os.path.join(os.path.dirname(__file__),"jarvis_policy.json")\n# Fail-closed capability contract: analysis/reporting modules only.\nALLOWED_IMPORTS={"ast","csv","json","math","os","sys","time","collections"}\n
+MIN_FORMER_COVERAGE=0.90
+POLICY_PATH=os.path.join(os.path.dirname(__file__),"jarvis_policy.json")
+# Fail-closed capability contract: analysis/reporting modules only.
+ALLOWED_IMPORTS={"ast","csv","json","math","os","sys","time","collections"}
+
 def audit_policy():
     try:
         with open(POLICY_PATH) as h: policy=json.load(h)
