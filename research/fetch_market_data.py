@@ -2,12 +2,13 @@
 Unofficial research bootstrap source only. No execution.
 """
 import argparse,csv,json,time,urllib.parse,urllib.request,datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 DEFAULT=["SPY","QQQ","IWM","DIA","AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA","JPM","V","XOM","UNH","COST","HD","AMD","NFLX","AVGO","MA","WMT","LLY","ORCL","CRM","BAC","KO","PEP","CSCO","IBM","INTC","QCOM","TXN","AMAT","GE","CAT","BA","DIS","MCD","NKE","LOW","GS","MS","AXP","CVX","COP","ABBV","MRK","TMO","LIN"]
 def fetch(symbol,years=10):
     end=int(time.time());start=end-int(years*365.25*86400)
-    url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(symbol)+"?period1="+str(start)+"&period2="+str(end)+"&interval=1d&events=div%2Csplits&includeAdjustedClose=true"
+    url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(symbol.replace(".", "-"))+"?period1="+str(start)+"&period2="+str(end)+"&interval=1d&events=div%2Csplits&includeAdjustedClose=true"
     req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 B27B-research/1.1"})
-    with urllib.request.urlopen(req,timeout=20) as r:d=json.load(r)
+    with urllib.request.urlopen(req,timeout=8) as r:d=json.load(r)
     z=d["chart"]["result"][0];ts=z.get("timestamp",[]);q=z["indicators"]["quote"][0]
     adj=z.get("indicators",{}).get("adjclose",[{}])[0].get("adjclose",[])
     rows=[]
@@ -32,17 +33,24 @@ def main():
         hist={r["ticker"].strip().upper() for r in mr if r["start_date"] <= datetime.datetime.now(datetime.timezone.utc).date().isoformat() and (not r["end_date"] or r["end_date"] >= cutoff)}
         syms=sorted(hist | {"SPY"})
         print(f"B27B_FETCH_UNIVERSE symbols={len(syms)} cutoff={cutoff}",flush=True)
+    results={}
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        futures={pool.submit(fetch,s,a.years):s for s in syms}
+        for future in as_completed(futures):
+            s=futures[future]
+            try: results[s]=(future.result(),None)
+            except Exception as e: results[s]=([],repr(e))
     ok=0; failed=0; empty=0
     with open(a.out,"w",newline="") as h:
         w=csv.writer(h);w.writerow(["timestamp","symbol","open","high","low","close","volume"])
-        for n,s in enumerate(syms):
-            try:
-                rows=fetch(s,a.years);w.writerows(rows)
+        for s in syms:
+            rows,error=results[s]
+            if error is not None:
+                failed+=1;print(s,"ERROR",error,flush=True)
+            else:
+                w.writerows(rows)
                 if rows: ok+=1
                 else: empty+=1
                 print(s,len(rows),flush=True)
-            except Exception as e:
-                failed+=1;print(s,"ERROR",repr(e),flush=True)
-            if n+1<len(syms):time.sleep(0.15)
     print(f"B27B_FETCH_COVERAGE requested={len(syms)} nonempty={ok} empty={empty} failed={failed} coverage={(ok/len(syms) if syms else 0):.4f}",flush=True)
 if __name__=="__main__":main()
