@@ -3,7 +3,7 @@ from collections import defaultdict
 from http.server import BaseHTTPRequestHandler,HTTPServer
 URL="https://huggingface.co/datasets/gude/polymarket-wallet-activity/resolve/main/wallet_0xb27b/data/btc_5m_activity.jsonl.gz"
 TOTAL=5858293
-S={"status":"starting Stage 11 execution-cost stress test","records":0,"markets":0,"error":None,"conditions":{}}
+S={"status":"starting Stage 12 final historical validation","records":0,"markets":0,"error":None,"conditions":{}}
 def n(x):
  try:return float(x)
  except:return 0.
@@ -96,9 +96,28 @@ def run():
   for cost in [0.0,0.001,0.0025,0.005,0.0075,0.01]:
    net=tusd-cost*tqsum;weak.append({"cost_per_paired_share":cost,"net_edge_usd":round(net,2),"net_edge_per_share":round(net/tqsum,6) if tqsum else None,"positive":net>0})
   breakeven=base_usd/base_q if base_q else None
+  # Stage 12: final historical validation summary with predeclared pass/fail diagnostics.
+  # This does NOT authorize live money; it decides whether live paper testing is warranted.
+  overall=summary(rows); late=summary(test)
+  cost_levels=[0.0025,0.005,0.0075,0.01]
+  cost_checks=[]
+  oq=sum(x["q"] for x in rows);oe=sum(x["usd"] for x in rows)
+  for cost in cost_levels:
+   net=oe-cost*oq
+   cost_checks.append({"cost_per_paired_share":cost,"net_edge_usd":round(net,2),"net_edge_per_share":round(net/oq,6) if oq else None,"positive":net>0})
+  diagnostics={
+   "overall_positive_edge":overall.get("edge_per_share",0)>0,
+   "positive_decile_count":positive_deciles,
+   "positive_decile_requirement_met":positive_deciles>=7,
+   "survives_0_005_cost":(oe-0.005*oq)>0,
+   "survives_0_0075_cost":(oe-0.0075*oq)>0,
+   "latest_20pct_positive":late.get("edge_per_share",0)>0,
+   "latest_20pct_edge_per_share":late.get("edge_per_share")
+  }
+  paper_candidate=diagnostics["overall_positive_edge"] and diagnostics["positive_decile_requirement_met"] and diagnostics["survives_0_005_cost"]
   S["markets"]=len(a);S["conditions"]={
-   "method":"Stage 11 execution-cost stress test using each market first observed trade timestamp; descriptive historical evidence, not executable fill proof",
-   "clean_paired_markets":len(rows),"overall":summary(rows),"execution_cost_stress":{"modeled_scenarios":scenarios,"historical_gross_break_even_cost_per_paired_share":round(breakeven,6) if breakeven is not None else None,"warning":"Fill fractions only scale observed reconstructed paired volume; they do not model queue position or adverse selection."},"weak_regime_cost_stress":weak,"chronological_deciles":regimes,"chronological_quintiles":rolling,"regime_summary":{"positive_deciles":positive_deciles,"negative_deciles":negative_deciles},"frozen_thresholds_from_first_80pct":thresholds,"frozen_filter_validation":validation,"chronological_80_20":{"first_80pct":summary(train),"last_20pct":summary(test),"timestamped_markets":sum(x["ts"]>0 for x in rows)},
+   "method":"Stage 12 final historical validation using each market first observed trade timestamp; descriptive historical evidence, not executable fill proof",
+   "clean_paired_markets":len(rows),"overall":overall,"final_validation":{"diagnostics":diagnostics,"cost_checks":cost_checks,"historical_paper_candidate":paper_candidate,"decision":"advance to live-data paper testing only" if paper_candidate else "do not advance; revise historical strategy","warning":"A historical paper-candidate result is not evidence of live profitability. The latest 20% is explicitly retained as a regime-risk warning."},"execution_cost_stress":{"modeled_scenarios":scenarios,"historical_gross_break_even_cost_per_paired_share":round(breakeven,6) if breakeven is not None else None,"warning":"Fill fractions only scale observed reconstructed paired volume; they do not model queue position or adverse selection."},"weak_regime_cost_stress":weak,"chronological_deciles":regimes,"chronological_quintiles":rolling,"regime_summary":{"positive_deciles":positive_deciles,"negative_deciles":negative_deciles},"frozen_thresholds_from_first_80pct":thresholds,"frozen_filter_validation":validation,"chronological_80_20":{"first_80pct":summary(train),"last_20pct":summary(test),"timestamped_markets":sum(x["ts"]>0 for x in rows)},
    "regime_feature_comparison":{
     "earlier_80pct":{"market_buy_count":bucket_subset(train,"buys"),"total_wallet_buy_shares":bucket_subset(train,"total"),"inventory_balance":bucket_subset(train,"balance"),"merge_coverage":bucket_subset(train,"mergecov"),"trade_time_span":bucket_subset(train,"span")},
     "later_20pct":{"market_buy_count":bucket_subset(test,"buys"),"total_wallet_buy_shares":bucket_subset(test,"total"),"inventory_balance":bucket_subset(test,"balance"),"merge_coverage":bucket_subset(test,"mergecov"),"trade_time_span":bucket_subset(test,"span")}
@@ -109,11 +128,11 @@ def run():
    "by_merge_coverage_of_pair_capacity":bucket("mergecov"),
    "by_observed_trade_time_span":bucket("span"),
    "notes":["Quartiles are computed across clean paired markets.","Higher/lower bucket results may reflect wallet behavior, market state, or archive structure; they do not prove a rule our bot can reproduce.","Pair cost is intentionally not used as an explanatory bucket because pair cost mechanically determines reconstructed edge.","Stage 9 freezes candidate thresholds from the earlier 80% before scoring the later 20%, reducing look-ahead leakage. Candidate features were motivated by prior exploratory analysis, so this is still not a pristine independent discovery set.","Next step after diagnosis is to define candidate filters using earlier data only, then evaluate them untouched on the later 20% before any live-paper deployment."]
-  };S["status"]="Stage 11 execution-cost stress test complete";print(json.dumps({"stage11_complete":S},separators=(",",":")),flush=True)
- except Exception as e:S["status"]="Stage 6 error";S["error"]=repr(e);print(json.dumps({"stage11_error":S}),flush=True)
+  };S["status"]="Stage 12 final historical validation complete";print(json.dumps({"stage12_complete":S},separators=(",",":")),flush=True)
+ except Exception as e:S["status"]="Stage 6 error";S["error"]=repr(e);print(json.dumps({"stage12_error":S}),flush=True)
 class H(BaseHTTPRequestHandler):
  def do_GET(self):
   b=json.dumps({"service":"b27b-paper-engine","mode":"paper-only","historical":S}).encode();self.send_response(200);self.send_header("Content-Type","application/json");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
  def log_message(self,*a):pass
 if __name__=="__main__":
- print("B27B PAPER ENGINE - STAGE 11 EXECUTION-COST STRESS TEST",flush=True);print("Research/paper only. No wallet, private keys, or live orders.",flush=True);threading.Thread(target=run,daemon=True).start();HTTPServer(("0.0.0.0",int(os.environ.get("PORT","10000"))),H).serve_forever()
+ print("B27B PAPER ENGINE - STAGE 12 FINAL HISTORICAL VALIDATION",flush=True);print("Research/paper only. No wallet, private keys, or live orders.",flush=True);threading.Thread(target=run,daemon=True).start();HTTPServer(("0.0.0.0",int(os.environ.get("PORT","10000"))),H).serve_forever()
