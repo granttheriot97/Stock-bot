@@ -1,7 +1,7 @@
 import json,os,time,threading,re,datetime
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
-STATE={"mode":"paper-only","status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":30,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"note":"observer-first; no fills until execution model is validated"}}
+STATE={"mode":"paper-only","status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":30,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"note":"observer-first; no fills until execution model is validated"}}
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -57,6 +57,8 @@ def probe():
    if pair is not None and (p["best_pair_cost"] is None or pair<p["best_pair_cost"]):p["best_pair_cost"]=pair
    if edge is not None and (p["best_gross_edge"] is None or edge>p["best_gross_edge"]):p["best_gross_edge"]=edge
    if target["slug"] not in p["markets_seen"]:p["markets_seen"]=(p["markets_seen"]+[target["slug"]])[-20:]
+   decision={"ts":time.time(),"slug":target["slug"],"long_quote":longq,"short_quote":shortq,"pair_cost":pair,"gross_pair_edge":edge,"threshold":0.01,"result":"qualifying" if edge is not None and edge>=0.01 else "rejected","reason":"gross pair edge met threshold" if edge is not None and edge>=0.01 else "gross pair edge below threshold"}
+   p["decision_log"]=(p["decision_log"]+[decision])[-200:]
    if edge is not None and edge>=0.01:
     p["opportunities"]+=1
     ev={"ts":time.time(),"slug":target["slug"],"pair_cost":pair,"gross_pair_edge":edge}
