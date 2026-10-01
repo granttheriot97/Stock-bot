@@ -138,9 +138,12 @@ def probe():
    time.sleep(10)
   except Exception as e:
    msg=repr(e);STATE.update(status="rate-limited; backing off" if "429" in msg or "RateLimit" in msg else "probe error; retrying",last_update=time.time(),error=msg,backoff_seconds=backoff);STATE["health"]["last_error"]=time.time();STATE["health"]["consecutive_errors"]+=1;STATE["health"]["rate_limit_errors"]+=(1 if "429" in msg or "RateLimit" in msg else 0)
-   print(json.dumps({"public_probe_retry":{"seconds":backoff,"error":msg[:240]}}),flush=True)
-   if "404" in msg or "NotFound" in msg:target=None
-   time.sleep(backoff);backoff=min(backoff*2,300)
+   is_not_found=("404" in msg or "NotFound" in msg);retry_seconds=3 if is_not_found else backoff
+   if is_not_found:
+    target=None;targets=[];last_discovery=0;backoff=30;STATE.update(status="market rollover; retrying discovery",backoff_seconds=retry_seconds)
+   print(json.dumps({"public_probe_retry":{"seconds":retry_seconds,"error":msg[:240],"rollover_retry":is_not_found}}),flush=True)
+   time.sleep(retry_seconds)
+   if not is_not_found:backoff=min(backoff*2,300)
 class H(BaseHTTPRequestHandler):
  def do_GET(self):
   b=json.dumps(STATE,default=str).encode();self.send_response(200);self.send_header("Content-Type","application/json");self.send_header("Access-Control-Allow-Origin","*");self.send_header("Cache-Control","no-store");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
