@@ -7,6 +7,7 @@ import argparse
 import csv
 import math
 import os
+import random
 from collections import defaultdict
 
 from multi_strategy import load
@@ -56,7 +57,7 @@ def is_member(periods, symbol, date):
     return any(start <= date and (end is None or date <= end) for start, end in periods.get(symbol, []))
 
 
-def run_fold(data, maps, dates, start, end, membership=None, removed=None):
+def run_fold(data, maps, dates, start, end, membership=None, removed=None, rng=None):
     removed = removed or set()
     candidates = sorted(symbol for symbol in data if symbol not in EXCLUDE and symbol not in removed)
     cost = COST_BPS / 10000
@@ -99,8 +100,13 @@ def run_fold(data, maps, dates, start, end, membership=None, removed=None):
                 tomorrow = maps[symbol].get(next_date)
                 if old and recent and tomorrow and old["close"] > 0:
                     ranked.append((recent["close"] / old["close"] - 1, symbol))
-            ranked.sort(reverse=True)
-            selected = [symbol for _, symbol in ranked[:HOLDINGS]]
+            if rng is None:
+                ranked.sort(reverse=True)
+                selected = [symbol for _, symbol in ranked[:HOLDINGS]]
+            else:
+                eligible = [symbol for _, symbol in ranked]
+                rng.shuffle(eligible)
+                selected = eligible[:HOLDINGS]
             target = {symbol: 1 / len(selected) for symbol in selected} if selected else {}
             changed = set(weights) | set(target)
             turnover = sum(abs(target.get(symbol, 0.0) - weights.get(symbol, 0.0)) for symbol in changed)
@@ -181,12 +187,12 @@ def print_folds(label, folds):
         )
 
 
-def build_folds(data, maps, dates, cuts, membership=None, removed=None):
+def build_folds(data, maps, dates, cuts, membership=None, removed=None, rng=None):
     folds = []
     for cut in cuts:
         end = min(len(dates), cut + int(len(dates) * 0.10))
         if cut >= LOOKBACK and end - cut > 2:
-            folds.append(run_fold(data, maps, dates, cut, end, membership, removed))
+            folds.append(run_fold(data, maps, dates, cut, end, membership, removed, rng))
     return folds
 
 
@@ -240,6 +246,29 @@ def main():
             f"B27B_JACKKNIFE_BEST removed={best_symbol} compound={best['compound']:.6f} "
             f"sharpe={best['sharpe']:.3f} drawdown={best['drawdown']:.6f} "
             f"asset_wins={best['asset_wins']} spy_wins={best['spy_wins']} passes={best['passes']}"
+        )
+
+    # Placebo portfolios use random eligible holdings but exactly the same
+    # timing, number of names, rebalancing, costs, folds and fixed gate.
+    observed = summarize(point_in_time_folds)
+    placebo_runs = []
+    for simulation in range(200):
+        rng = random.Random(271828 + simulation)
+        result = summarize(build_folds(data, maps, dates, cuts, membership, rng=rng))
+        if result is not None:
+            placebo_runs.append(result)
+    if observed is not None and placebo_runs:
+        compounds = sorted(result["compound"] for result in placebo_runs)
+        sharpes = sorted(result["sharpe"] for result in placebo_runs)
+        at_least_observed = sum(result["compound"] >= observed["compound"] for result in placebo_runs)
+        p_value = (at_least_observed + 1) / (len(placebo_runs) + 1)
+        q95_index = min(len(compounds) - 1, int(0.95 * len(compounds)))
+        print(
+            f"B27B_PLACEBO simulations={len(placebo_runs)} observed_compound={observed['compound']:.6f} "
+            f"median_compound={compounds[len(compounds)//2]:.6f} p95_compound={compounds[q95_index]:.6f} "
+            f"observed_sharpe={observed['sharpe']:.3f} median_sharpe={sharpes[len(sharpes)//2]:.3f} "
+            f"random_fixed_gate_passes={sum(result['passes'] for result in placebo_runs)} "
+            f"empirical_p={p_value:.6f}"
         )
 
 
