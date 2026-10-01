@@ -17,10 +17,15 @@ def choose(res):
   if not isinstance(d,dict):continue
   slug=d.get("slug") or d.get("marketSlug") or d.get("market_slug")
   if not slug or slug in seen:continue
-  seen.add(slug);title=d.get("title") or d.get("question") or d.get("name") or ""
+  seen.add(slug)
+  title=d.get("title") or d.get("question") or d.get("name") or ""
   t=(slug+" "+str(title)).lower()
   if "bitcoin" not in t and "btc" not in t:continue
-  d15=("15m" in t or "15 min" in t or "15-minute" in t or "15 minute" in t);d60=("60m" in t or "60 min" in t or "60-minute" in t or "60 minute" in t or "1 hour" in t);updown=("up" in t and "down" in t)\n  if not updown or not (d15 or d60):continue\n  score=(200 if d15 else 100)+(20 if "btc" in t else 0)
+  d15=("15m" in t or "15 min" in t or "15-minute" in t or "15 minute" in t)
+  d60=("60m" in t or "60 min" in t or "60-minute" in t or "60 minute" in t or "1 hour" in t)
+  if not ("up" in t and "down" in t):continue
+  if not (d15 or d60):continue
+  score=(200 if d15 else 100)+(20 if "btc" in t else 0)
   rank.append((score,slug,title))
  return sorted(rank,reverse=True)
 def probe():
