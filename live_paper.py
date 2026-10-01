@@ -2,7 +2,7 @@ import json,os,time,threading,re,datetime
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
 STARTED_AT=time.time()
-STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":5,"backoff_seconds":15,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"note":"fast BBO observer plus periodic order-book execution research; no fills until execution model is validated"}}
+STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":5,"backoff_seconds":15,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"validating","paper_fills_enabled":false,"rule":"documented BBO bestBid/bestAsk must match raw book top levels before fills"},"note":"fast BBO observer plus periodic order-book execution research; no fills until execution model is validated"}}
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -77,8 +77,11 @@ def probe():
      def level(x):
       if not isinstance(x,dict):return None
       px=x.get("px") or {};return {"price":float(px.get("value",0) or 0),"qty":float(x.get("qty",0) or 0)}
-     snap={"ts":time.time(),"slug":target["slug"],"top_bid":level(bids[0]) if bids else None,"top_offer":level(offers[0]) if offers else None,"bid_levels":len(bids),"offer_levels":len(offers),"transact_time":bmd.get("transactTime")}
-     if snap["top_bid"] and snap["top_offer"]:snap["displayed_spread"]=round(snap["top_offer"]["price"]-snap["top_bid"]["price"],4)
+     snap={"ts":time.time(),"slug":target["slug"],"top_bid":level(bids[0]) if bids else None,"top_offer":level(offers[0]) if offers else None,"bid_levels":len(bids),"offer_levels":len(offers),"transact_time":bmd.get("transactTime"),"bbo_best_bid":float((md.get("bestBid") or {}).get("value",0) or 0),"bbo_best_ask":float((md.get("bestAsk") or {}).get("value",0) or 0),"signal_long_quote":longq,"signal_short_quote":shortq}
+     if snap["top_bid"] and snap["top_offer"]:
+      snap["displayed_spread"]=round(snap["top_offer"]["price"]-snap["top_bid"]["price"],4)
+      snap["bbo_book_match"]=abs(snap["bbo_best_bid"]-snap["top_bid"]["price"])<0.0001 and abs(snap["bbo_best_ask"]-snap["top_offer"]["price"])<0.0001
+      sem=p["execution_semantics"];sem["samples"]=sem.get("samples",0)+1;sem["matches"]=sem.get("matches",0)+(1 if snap["bbo_book_match"] else 0);sem["match_rate"]=round(sem["matches"]/sem["samples"],4);sem["status"]="documented BBO/book mapping confirmed" if sem["samples"]>=3 and sem["match_rate"]>=0.95 else "validating";sem["paper_fills_enabled"]=False
      p["execution_snapshots"]=(p["execution_snapshots"]+[snap])[-100:];p["execution_snapshot_count"]+=1;last_book_sample[target["slug"]]=time.time()
      print(json.dumps({"execution_snapshot":snap}),flush=True)
     except Exception as be:
