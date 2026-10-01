@@ -104,7 +104,7 @@ def probe():
    if pair is not None and (p["best_pair_cost"] is None or pair<p["best_pair_cost"]):p["best_pair_cost"]=pair
    if edge is not None and (p["best_gross_edge"] is None or edge>p["best_gross_edge"]):p["best_gross_edge"]=edge
    if target["slug"] not in p["markets_seen"]:p["markets_seen"]=(p["markets_seen"]+[target["slug"]])[-20:]
-   decision={"ts":time.time(),"slug":target["slug"],"long_quote":longq,"short_quote":shortq,"pair_cost":pair,"gross_pair_edge":edge,"threshold":0.01,"result":"qualifying" if edge is not None and edge>=0.01 else "rejected","reason":"gross pair edge met threshold" if edge is not None and edge>=0.01 else "gross pair edge below threshold"}
+   decision_ts=time.time();sm=re.search(r"(\\d{4}-\\d{2}-\\d{2})-(\\d{4})z",target["slug"]);market_elapsed=None\n   if sm:\n    try:market_elapsed=round(decision_ts-datetime.datetime.strptime(sm.group(1)+sm.group(2),"%Y-%m-%d%H%M").replace(tzinfo=datetime.timezone.utc).timestamp(),1)\n    except:pass\n   decision={"ts":decision_ts,"slug":target["slug"],"duration":target.get("duration"),"seconds_into_market":market_elapsed,"long_quote":longq,"short_quote":shortq,"quote_imbalance":round(longq-shortq,4),"pair_cost":pair,"gross_pair_edge":edge,"threshold":0.01,"result":"qualifying" if edge is not None and edge>=0.01 else "rejected","reason":"gross pair edge met threshold" if edge is not None and edge>=0.01 else "gross pair edge below threshold"}
    p["decision_log"]=(p["decision_log"]+[decision])[-2000:]
    # Two-step paper execution: a signal creates a pending intent; only a later qualifying BBO can confirm it.
    pending=p["pending_orders"].get(target["slug"])
