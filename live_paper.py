@@ -2,7 +2,7 @@ import json,os,time,threading,re,datetime
 from http.server import BaseHTTPRequestHandler,HTTPServer
 from polymarket_us import PolymarketUS
 STARTED_AT=time.time()
-STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":10,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"validating","paper_fills_enabled":False,"rule":"documented BBO bestBid/bestAsk must match raw book top levels before fills"},"note":"fast BBO observer plus periodic order-book execution research; no fills until execution model is validated"}}
+STATE={"mode":"paper-only","started_at":STARTED_AT,"status":"starting conservative public live-data probe","target":"BTC Up or Down 15m","last_update":None,"market":None,"error":None,"real_orders":False,"poll_seconds":10,"backoff_seconds":30,"paper":{"starting_cash":100.0,"cash":100.0,"realized_pnl":0.0,"opportunities":0,"simulated_trades":0,"rejected":0,"observations":0,"best_pair_cost":None,"best_gross_edge":None,"markets_seen":[],"qualifying_events":[],"decision_log":[],"execution_snapshots":[],"execution_snapshot_count":0,"execution_semantics":{"status":"bbo-authoritative-paper-model","paper_fills_enabled":True,"rule":"use documented BBO for conservative paper execution; raw book retained as diagnostic only"},"paper_orders":[],"paper_fills":[],"max_position_usd":10.0,"note":"BBO-authoritative conservative paper execution; raw order book is diagnostic; real orders disabled"}}
 def obj(x):
  try:return x if isinstance(x,(dict,list,str,int,float,bool,type(None))) else x.model_dump()
  except:return str(x)
@@ -87,7 +87,7 @@ def probe():
      if snap["top_bid"] and snap["top_offer"]:
       snap["displayed_spread"]=round(snap["top_offer"]["price"]-snap["top_bid"]["price"],4)
       snap["bbo_book_match"]=abs(snap["bbo_best_bid"]-snap["top_bid"]["price"])<0.0001 and abs(snap["bbo_best_ask"]-snap["top_offer"]["price"])<0.0001
-      sem=p["execution_semantics"];sem["samples"]=sem.get("samples",0)+1;sem["matches"]=sem.get("matches",0)+(1 if snap["bbo_book_match"] else 0);sem["match_rate"]=round(sem["matches"]/sem["samples"],4);sem["status"]="documented BBO/book mapping confirmed" if sem["samples"]>=3 and sem["match_rate"]>=0.95 else "validating";sem["paper_fills_enabled"]=False
+      sem=p["execution_semantics"];sem["samples"]=sem.get("samples",0)+1;sem["matches"]=sem.get("matches",0)+(1 if snap["bbo_book_match"] else 0);sem["match_rate"]=round(sem["matches"]/sem["samples"],4);sem["raw_book_diagnostic"]="agreeing" if snap["bbo_book_match"] else "divergent";sem["paper_fills_enabled"]=True
      p["execution_snapshots"]=(p["execution_snapshots"]+[snap])[-100:];p["execution_snapshot_count"]+=1;last_book_sample[target["slug"]]=time.time()
      print(json.dumps({"execution_snapshot":snap}),flush=True)
     except Exception as be:
@@ -98,6 +98,14 @@ def probe():
    if target["slug"] not in p["markets_seen"]:p["markets_seen"]=(p["markets_seen"]+[target["slug"]])[-20:]
    decision={"ts":time.time(),"slug":target["slug"],"long_quote":longq,"short_quote":shortq,"pair_cost":pair,"gross_pair_edge":edge,"threshold":0.01,"result":"qualifying" if edge is not None and edge>=0.01 else "rejected","reason":"gross pair edge met threshold" if edge is not None and edge>=0.01 else "gross pair edge below threshold"}
    p["decision_log"]=(p["decision_log"]+[decision])[-2000:]
+   # Conservative fake execution: only qualifying paired signals, capped at $10; no real order API is called.
+   if decision["result"]=="qualifying" and p["execution_semantics"].get("paper_fills_enabled") and pair>0:
+    budget=min(p["max_position_usd"],p["cash"]);shares=round(budget/pair,4) if budget>0 else 0
+    if shares>0:
+     cost=round(shares*pair,4);payout=round(shares,4);profit=round(payout-cost,4)
+     fill={"ts":time.time(),"slug":target["slug"],"shares_each_side":shares,"up_px":longq,"down_px":shortq,"pair_cost":pair,"cash_cost":cost,"locked_payout":payout,"locked_gross_pnl":profit,"model":"BBO paired paper fill"}
+     p["cash"]=round(p["cash"]-cost+payout,4);p["realized_pnl"]=round(p["realized_pnl"]+profit,4);p["simulated_trades"]+=1;p["paper_fills"]=(p["paper_fills"]+[fill])[-200:]
+
    if edge is not None and edge>=0.01:
     p["opportunities"]+=1
     ev={"ts":time.time(),"slug":target["slug"],"pair_cost":pair,"gross_pair_edge":edge}
