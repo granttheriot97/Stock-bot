@@ -3,7 +3,7 @@ from collections import defaultdict
 from http.server import BaseHTTPRequestHandler,HTTPServer
 URL="https://huggingface.co/datasets/gude/polymarket-wallet-activity/resolve/main/wallet_0xb27b/data/btc_5m_activity.jsonl.gz"
 TOTAL=5858293
-S={"status":"starting Stage 6 condition analysis","records":0,"markets":0,"error":None,"conditions":{}}
+S={"status":"starting Stage 7 chronological regime analysis","records":0,"markets":0,"error":None,"conditions":{}}
 def n(x):
  try:return float(x)
  except:return 0.
@@ -38,7 +38,7 @@ def run():
    total=p["uq"]+p["dq"];bal=cap/max(p["uq"],p["dq"]) if max(p["uq"],p["dq"]) else 0
    mergecov=p["merge"]/cap if cap else 0
    span=(p["last"]-p["first"]) if p["first"] is not None and p["last"] is not None else 0
-   rows.append({"m":m,"q":cap,"edge":edge,"usd":edge*cap,"cost":cost,"buys":p["buys"],"total":total,"balance":bal,"mergecov":mergecov,"span":span})
+   rows.append({"m":m,"q":cap,"edge":edge,"usd":edge*cap,"cost":cost,"buys":p["buys"],"total":total,"balance":bal,"mergecov":mergecov,"span":span,"ts":p["first"] or 0})
   def quant(v,p):
    z=sorted(v);return z[min(len(z)-1,max(0,int((len(z)-1)*p)))] if z else 0
   def summary(z):
@@ -51,20 +51,20 @@ def run():
     v=x[field];i=0 if v<=q25 else 1 if v<=q50 else 2 if v<=q75 else 3;groups[i].append(x)
    return {"cutpoints":[round(q25,6),round(q50,6),round(q75,6)],"quartiles":{"Q1":summary(groups[0]),"Q2":summary(groups[1]),"Q3":summary(groups[2]),"Q4":summary(groups[3])}}
   # Leave pair cost out as a selector because it directly defines edge and would be tautological.
-  S["markets"]=len(a);S["conditions"]={
-   "method":"descriptive clean-market condition analysis; associations only, not causal or executable fill evidence",
-   "clean_paired_markets":len(rows),"overall":summary(rows),
+  chrono=sorted(rows,key=lambda x:(x["ts"]<=0,x["ts"],x["m"])); k=int(len(chrono)*.8); train=chrono[:k]; test=chrono[k:];\n  S["markets"]=len(a);S["conditions"]={
+   "method":"Stage 7 chronological regime analysis using each market first observed trade timestamp; descriptive historical evidence, not executable fill proof",
+   "clean_paired_markets":len(rows),"overall":summary(rows),"chronological_80_20":{"first_80pct":summary(train),"last_20pct":summary(test),"timestamped_markets":sum(x["ts"]>0 for x in rows)},
    "by_market_buy_count":bucket("buys"),
    "by_total_wallet_buy_shares":bucket("total"),
    "by_up_down_inventory_balance":bucket("balance"),
    "by_merge_coverage_of_pair_capacity":bucket("mergecov"),
    "by_observed_trade_time_span":bucket("span"),
-   "notes":["Quartiles are computed across clean paired markets.","Higher/lower bucket results may reflect wallet behavior, market state, or archive structure; they do not prove a rule our bot can reproduce.","Pair cost is intentionally not used as an explanatory bucket because pair cost mechanically determines reconstructed edge.","Next validation requires chronological/order-book paper execution with fees, latency, partial fills and queue position."]
-  };S["status"]="Stage 6 condition analysis complete";print(json.dumps({"stage6_complete":S},separators=(",",":")),flush=True)
- except Exception as e:S["status"]="Stage 6 error";S["error"]=repr(e);print(json.dumps({"stage6_error":S}),flush=True)
+   "notes":["Quartiles are computed across clean paired markets.","Higher/lower bucket results may reflect wallet behavior, market state, or archive structure; they do not prove a rule our bot can reproduce.","Pair cost is intentionally not used as an explanatory bucket because pair cost mechanically determines reconstructed edge.","Chronological split reduces the prior slug-order limitation, but it is still observed-wallet reconstruction. Next validation requires independent live paper execution with fees, latency, partial fills and queue position."]
+  };S["status"]="Stage 7 chronological regime analysis complete";print(json.dumps({"stage7_complete":S},separators=(",",":")),flush=True)
+ except Exception as e:S["status"]="Stage 6 error";S["error"]=repr(e);print(json.dumps({"stage7_error":S}),flush=True)
 class H(BaseHTTPRequestHandler):
  def do_GET(self):
   b=json.dumps({"service":"b27b-paper-engine","mode":"paper-only","historical":S}).encode();self.send_response(200);self.send_header("Content-Type","application/json");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
  def log_message(self,*a):pass
 if __name__=="__main__":
- print("B27B PAPER ENGINE - STAGE 6 CONDITION ANALYSIS",flush=True);print("Research/paper only. No wallet, private keys, or live orders.",flush=True);threading.Thread(target=run,daemon=True).start();HTTPServer(("0.0.0.0",int(os.environ.get("PORT","10000"))),H).serve_forever()
+ print("B27B PAPER ENGINE - STAGE 7 CHRONOLOGICAL REGIME ANALYSIS",flush=True);print("Research/paper only. No wallet, private keys, or live orders.",flush=True);threading.Thread(target=run,daemon=True).start();HTTPServer(("0.0.0.0",int(os.environ.get("PORT","10000"))),H).serve_forever()
