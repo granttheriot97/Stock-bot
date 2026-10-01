@@ -61,7 +61,7 @@ def probe():
      score,slug,title=live[0];selected=[{"slug":slug,"title":title,"score":score,"duration":"other"}]
     targets=selected[:2];last_discovery=time.time()
     if target is None or not any(x["slug"]==target.get("slug") for x in targets):target=targets[0]
-    STATE["active_targets"]=targets
+    STATE["active_targets"]=targets;STATE["available_markets"]=[{"slug":x["slug"],"title":x["title"],"duration":x["duration"],"state":"discovered","long_quote":None,"short_quote":None,"pair_cost":None,"gross_pair_edge":None,"last_quote_ts":None} for x in targets]
     STATE.update(status="multi-market BTC observer active",market={"slug":target["slug"],"title":target["title"]},error=None);STATE["health"]["market_rotations"]+=1
     print(json.dumps({"targets_selected":targets}),flush=True);time.sleep(2)
    target=targets[STATE["paper"]["observations"]%len(targets)] if targets else target
@@ -75,6 +75,8 @@ def probe():
     print(json.dumps({"target_rotation":{"slug":target["slug"],"state":market_state,"reason":"not open or invalid quotes"}}),flush=True)
     targets=[x for x in targets if x["slug"]!=target["slug"]];target=targets[0] if targets else None;time.sleep(2);continue
    pair=round(longq+shortq,4);edge=round(1-pair,4)
+   for am in STATE.get("available_markets",[]):
+    if am.get("slug")==target["slug"]:am.update(state=market_state,long_quote=longq,short_quote=shortq,pair_cost=pair,gross_pair_edge=edge,last_quote_ts=time.time())
    p=STATE["paper"]
    if time.time()-last_book_sample.get(target["slug"],0)>=60:
     try:
