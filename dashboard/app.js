@@ -2,7 +2,7 @@ const stages=[["01","Archive replay","5,858,293 records verified"],["02","Wallet
 const LIVE="https://b27b-live-paper-probe.onrender.com";function money(v){return v==null?"—":"$"+Number(v).toFixed(2)}function cents(v){return v==null?"—":(Number(v)*100).toFixed(2)+"¢"}let decisionData=[],decisionFilter="all";
 function decisionExplanation(x){
   const up=Number(x.long_quote),down=Number(x.short_quote),pair=Number(x.pair_cost),edge=Number(x.gross_pair_edge),threshold=Number(x.threshold??0.01);
-  if(!Number.isFinite(pair)||!Number.isFinite(edge)||!Number.isFinite(up)||!Number.isFinite(down)){
+  if(x.long_quote==null||x.short_quote==null||x.pair_cost==null||x.gross_pair_edge==null||!Number.isFinite(pair)||!Number.isFinite(edge)||!Number.isFinite(up)||!Number.isFinite(down)){
     return "Not enough valid quote data to calculate an executable pair.";
   }
   const margin=edge-threshold;
@@ -26,25 +26,25 @@ function renderRuntime(){
 setInterval(renderRuntime,1000);
 
 function renderControlRoom(s,m,p){
- const threshold=.01, edge=Number(m.gross_pair_edge), obs=Number(p.observations||0), q=Number(p.opportunities||0), rej=Number(p.rejected||0);
+ const threshold=.01, edge=m.gross_pair_edge==null?NaN:Number(m.gross_pair_edge), obs=Number(p.observations||0), q=Number(p.opportunities||0), rej=Number(p.rejected||0);
  const title=m.title||"BTC Up or Down";
  const mins=/15/.test(title)||/15m/.test(m.slug||"")?15:(/60/.test(title)||/60m/.test(m.slug||"")?60:null);
  document.querySelector("#marketMeaning").textContent="A live prediction market asking whether Bitcoin finishes UP or DOWN over "+(mins?mins+" minutes":"the stated market window")+". One winning contract ultimately pays $1.00.";
  document.querySelector("#marketSlug").textContent=m.slug||"—";
  if(Number.isFinite(edge)){const gap=threshold-edge;document.querySelector("#distance").textContent=gap<=0?"QUALIFIED by "+Math.abs(gap*100).toFixed(2)+"¢":(gap*100).toFixed(2)+"¢ away";document.querySelector("#distanceDetail").textContent="Current "+(edge>=0?"+":"")+(edge*100).toFixed(2)+"¢ • required +1.00¢";document.querySelector("#distanceBar").style.width=Math.max(0,Math.min(100,((edge+.03)/.04)*100))+"%"}else document.querySelector("#distance").textContent="Waiting for valid quotes";
- const best=Number(p.best_gross_edge);document.querySelector("#bestOpportunity").textContent=Number.isFinite(best)?((best>=0?"+":"")+(best*100).toFixed(2)+"¢"):"—";document.querySelector("#bestOpportunityDetail").textContent=p.best_pair_cost==null?"No valid pair yet":"Best pair cost $"+Number(p.best_pair_cost).toFixed(3);
+ const best=p.best_gross_edge==null?NaN:Number(p.best_gross_edge);document.querySelector("#bestOpportunity").textContent=Number.isFinite(best)?((best>=0?"+":"")+(best*100).toFixed(2)+"¢"):"—";document.querySelector("#bestOpportunityDetail").textContent=p.best_pair_cost==null?"No valid pair yet":"Best pair cost $"+Number(p.best_pair_cost).toFixed(3);
  const total=q+rej;document.querySelector("#qualRate").textContent=total?(q/total*100).toFixed(2)+"%":"0.00%";document.querySelector("#qualRateDetail").textContent=q+" qualifying / "+rej+" rejected";
  document.querySelector("#milestone").textContent=obs.toLocaleString()+" / 10,000";document.querySelector("#milestoneBar").style.width=Math.min(100,obs/100)+"%";document.querySelector("#milestoneDetail").textContent=Math.max(0,10000-obs).toLocaleString()+" observations to milestone";
- document.querySelector("#healthEngine").textContent=s.error?"DEGRADED":"ONLINE";document.querySelector("#healthData").textContent=m.market_state==="MARKET_STATE_OPEN"?"LIVE":"ROTATING / WAITING";document.querySelector("#healthLast").textContent=s.last_update?Math.max(0,Math.round(Date.now()/1000-s.last_update))+" sec ago":"—";document.querySelector("#sessionObs").textContent=obs.toLocaleString();document.querySelector("#healthApi").textContent=s.error?"ERROR":"OK";document.querySelector("#archiveHealth").textContent="Session + scheduled archive";
+ document.querySelector("#healthEngine").textContent=s.error?"DEGRADED":"ONLINE";document.querySelector("#healthData").textContent=m.state==="MARKET_STATE_OPEN"?"LIVE":"ROTATING / WAITING";document.querySelector("#healthLast").textContent=s.last_update?Math.max(0,Math.round(Date.now()/1000-s.last_update))+" sec ago":"—";document.querySelector("#sessionObs").textContent=obs.toLocaleString();document.querySelector("#healthApi").textContent=s.error?"ERROR":"OK";document.querySelector("#archiveHealth").textContent="Archive verification pending";
  document.querySelector("#experimentState").textContent=obs<10000?"COLLECTING DATA":"MILESTONE REACHED";
  renderEdgeDistribution(decisionData);renderMarketHistory(decisionData);
 }
 function renderEdgeDistribution(rows){
  const bins=[["≤ -1¢",-Infinity,-.01],["-1 to 0¢",-.01,0],["0 to +1¢",0,.01],["≥ +1¢",.01,Infinity]],counts=[0,0,0,0];
- rows.forEach(x=>{const e=Number(x.gross_pair_edge);if(!Number.isFinite(e))return;if(e<=-.01)counts[0]++;else if(e<0)counts[1]++;else if(e<.01)counts[2]++;else counts[3]++});
+ rows.forEach(x=>{if(x.gross_pair_edge==null)return;const e=Number(x.gross_pair_edge);if(!Number.isFinite(e))return;if(e<=-.01)counts[0]++;else if(e<0)counts[1]++;else if(e<.01)counts[2]++;else counts[3]++});
  const mx=Math.max(1,...counts);document.querySelector("#edgeDistribution").innerHTML=bins.map((b,i)=>'<div class="edgebin"><span>'+b[0]+'</span><div class="edgebar"><i style="width:'+(counts[i]/mx*100)+'%"></i></div><b>'+counts[i]+'</b></div>').join("");
 }
 function renderMarketHistory(rows){
- const map={};rows.forEach(x=>{const k=x.slug||"Unknown";if(!map[k])map[k]={n:0,q:0,best:-Infinity,last:0};const z=map[k];z.n++;if(x.result==="qualifying")z.q++;const e=Number(x.gross_pair_edge);if(Number.isFinite(e))z.best=Math.max(z.best,e);z.last=Math.max(z.last,Number(x.ts)||0)});
+ const map={};rows.forEach(x=>{const k=x.slug||"Unknown";if(!map[k])map[k]={n:0,q:0,best:-Infinity,last:0};const z=map[k];z.n++;if(x.result==="qualifying")z.q++;const e=x.gross_pair_edge==null?NaN:Number(x.gross_pair_edge);if(Number.isFinite(e))z.best=Math.max(z.best,e);z.last=Math.max(z.last,Number(x.ts)||0)});
  const out=Object.entries(map).sort((a,b)=>b[1].last-a[1].last);document.querySelector("#marketHistory").innerHTML=out.length?out.map(([k,z])=>'<div class="historyrow"><div><b>'+k+'</b><small>'+new Date(z.last*1000).toLocaleTimeString()+'</small></div><span>'+z.n+' observations</span><span>'+z.q+' qualifying</span><span>Best '+(Number.isFinite(z.best)?((z.best>=0?"+":"")+(z.best*100).toFixed(2)+"¢"):"—")+'</span></div>').join(""):'<p class="muted">Market history will appear as observations accumulate.</p>';
 }
