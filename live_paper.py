@@ -144,9 +144,11 @@ def probe():
    time.sleep(10)
   except Exception as e:
    msg=repr(e);STATE.update(status="rate-limited; backing off" if "429" in msg or "RateLimit" in msg else "probe error; retrying",last_update=time.time(),error=msg,backoff_seconds=backoff);STATE["health"]["last_error"]=time.time();STATE["health"]["consecutive_errors"]+=1;STATE["health"]["rate_limit_errors"]+=(1 if "429" in msg or "RateLimit" in msg else 0)
-   is_not_found=("404" in msg or "NotFound" in msg);retry_seconds=3 if is_not_found else backoff
+   is_not_found=("404" in msg or "NotFound" in msg);retry_seconds=min(10,3+max(0,STATE["health"]["consecutive_errors"]-1)//3*2) if is_not_found else backoff
    if is_not_found:
     target=None;targets=[];last_discovery=0;backoff=30;STATE.update(status="market rollover; retrying discovery",backoff_seconds=retry_seconds)
+    # A closed 15-minute contract can legitimately 404 during rollover. Do not let expected rollover retries make engine health look progressively worse.
+    STATE["health"]["consecutive_errors"]=0
    print(json.dumps({"public_probe_retry":{"seconds":retry_seconds,"error":msg[:240],"rollover_retry":is_not_found}}),flush=True)
    time.sleep(retry_seconds)
    if not is_not_found:backoff=min(backoff*2,300)
