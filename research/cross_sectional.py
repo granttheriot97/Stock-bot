@@ -221,6 +221,10 @@ def main():
     print_folds("baseline", baseline_folds)
     print_folds("pit_subset", point_in_time_folds)
 
+    if os.getenv("B27B_SKIP_RESAMPLING") == "1":
+        print("B27B_RESAMPLING_SKIPPED reason=expanded_universe_validation")
+        return
+
     # Delete-one-name jackknife: diagnostics only. Each rerun uses the exact
     # same point-in-time universe, strategy, costs, folds and fixed gate.
     symbols = sorted(symbol for symbol in data if symbol not in EXCLUDE)
