@@ -71,7 +71,7 @@ def main():
     stage("agent_security","python research/agents/security_test.py",["research/agents/agent_policy.json","research/agents/supervisor.py"],[],years+"|"+cost,0)
     stage("agent_supervisor","python research/agents/supervisor.py",["research/agents/agent_policy.json","research/agents/supervisor.py"],[],years+"|"+cost,0)
     stage("membership_boundary_tests","python research/tests/test_membership_boundaries.py",[mem,"research/data/validated_ticker_renames.csv","research/cross_sectional.py","research/tests/test_membership_boundaries.py"],[],as_of,0)
-    stage("specialist_security_tests","python -m pytest -q research/tests/test_specialist_team.py",["research/specialist_team.py","research/tests/test_specialist_team.py"],[],as_of,0)
+    stage("specialist_security_tests","python research/specialist_team.py",["research/specialist_team.py","research/tests/test_specialist_team.py"],[],as_of,0)
     stage("former_probe",f'python research/former_data_probe.py --as-of "{as_of}"',[mem],[],years+"|"+as_of,1)
     stage("fetch_agent",f'B27B_YEARS="{years}" B27B_AS_OF_DATE="{as_of}" B27B_BARS="{bars}" python research/agents/fetch_agent.py',[mem,"research/agents/fetch_agent.py"],[bars],"full_membership|"+years+"|"+as_of,2)
     stage("repair_queue",f'python research/repair_queue.py --bars {bars} --membership {mem} --aliases research/data/validated_ticker_renames.csv --start "{start}" --end "{as_of}" --ledger /tmp/b27b_coverage_repair_ledger.csv --queue /tmp/b27b_repair_queue.json',[mem,bars,"research/data/validated_ticker_renames.csv","research/repair_queue.py"],["/tmp/b27b_coverage_repair_ledger.csv","/tmp/b27b_repair_queue.json"],years+"|"+start+"|"+as_of,0)
