@@ -1,7 +1,8 @@
 """B27B optimization controller: research-only scheduling, failure memory, and telemetry.
 It may optimize work ordering, never research gates, strategy parameters, permissions, or trading.
 """
-import json,os,time,hashlib\nfrom persistent_memory import get as memory_get,put as memory_put
+import json,os,time,hashlib
+from persistent_memory import get as memory_get,put as memory_put
 from dataclasses import dataclass,asdict
 
 STATE=os.getenv("B27B_STATE_DIR","/tmp/b27b_state")
