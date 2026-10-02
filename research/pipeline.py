@@ -3,10 +3,13 @@ Research/paper only. Never edits strategy parameters or places trades.
 """
 import hashlib,json,os,signal,subprocess,tempfile,time
 from optimizer_controller import should_run as optimizer_should_run,record as optimizer_record
+from persistent_memory import get as memory_get,put as memory_put
 from collections import deque
 from datetime import date,timedelta
 STATE=os.getenv("B27B_STATE_DIR","/tmp/b27b_state");os.makedirs(STATE,exist_ok=True);MAN=os.path.join(STATE,"manifest.json")
 def load():
+    remote=memory_get("pipeline_manifest")
+    if isinstance(remote,dict) and isinstance(remote.get("stages"),dict):return remote
     try:
         with open(MAN) as h:return json.load(h)
     except:return {"stages":{}}
@@ -14,6 +17,7 @@ def save(s):
     t=MAN+".tmp"
     with open(t,"w") as h:json.dump(s,h,indent=2,sort_keys=True)
     os.replace(t,MAN)
+    memory_put("pipeline_manifest",s)
 def fp(paths,extra=""):
     h=hashlib.sha256(extra.encode())
     for p in paths:
