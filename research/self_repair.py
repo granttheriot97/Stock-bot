@@ -91,7 +91,12 @@ def main():
     for rg in item.get("ranges",[]):partial_jobs.append((item["symbol"],rg["start"],rg["end"]))
   except Exception as exc:print("B27B_TARGETED_REPAIR_PARTIALS_ERROR "+type(exc).__name__,flush=True)
  alpha_key=os.getenv("ALPHAVANTAGE_API_KEY","").strip(); eod_key=os.getenv("EODHD_API_TOKEN","").strip(); wiki_key=os.getenv("NASDAQ_DATA_LINK_API_KEY","").strip()
- alpha_ready,alpha_status=alpha_full_history_ready(alpha_key,a.start,a.end)
+ external_dependency=os.getenv("B27B_HISTORICAL_EXTERNAL_DEPENDENCY","unavailable").strip().lower()
+ external_blocked=external_dependency in ("unavailable","blocked","1","true","yes")
+ if external_blocked:
+  alpha_ready,alpha_status=False,"external_dependency_unavailable"
+ else:
+  alpha_ready,alpha_status=alpha_full_history_ready(alpha_key,a.start,a.end)
  print(f"B27B_ALPHA_CONTROL configured={str(bool(alpha_key)).lower()} full_history_ready={str(alpha_ready).lower()} detail={alpha_status}",flush=True)
  stooq_hosts=[]
  health_path="/tmp/b27b_provider_health.json"; cached=None
@@ -101,6 +106,9 @@ def main():
  except Exception: cached=None
  for name,host in (("stooq-com","https://stooq.com/q/d/l/"),("stooq-pl","https://stooq.pl/q/d/l/")):
   rows=0;err=None;cache_hit=False
+  if external_blocked:
+   print(f"B27B_SELF_REPAIR_CONTROL source={name} symbol=SPY rows=0 status=EXTERNAL_DEPENDENCY_UNAVAILABLE error=- cache_hit=false",flush=True)
+   continue
   if name=="stooq-com" and cached and "stooq_com" in cached:
    item=cached["stooq_com"]; rows=int(item.get("rows",0)); err=item.get("error"); healthy=bool(item.get("healthy")); cache_hit=True
   else:
@@ -109,9 +117,9 @@ def main():
    healthy=rows>=252 and err is None
   if healthy:stooq_hosts.append((name,host))
   print(f"B27B_SELF_REPAIR_CONTROL source={name} symbol=SPY rows={rows} status={'HEALTHY' if healthy else 'UNREACHABLE'} error={err or '-'} cache_hit={str(cache_hit).lower()}",flush=True)
- root_cause="primary Yahoo endpoint returns 404 for historical/delisted symbols"
- if not stooq_hosts:root_cause+="; public Stooq endpoints unreachable from runtime"
- print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":root_cause,"credentialed_fallbacks":{"alphavantage":alpha_ready,"eodhd":bool(eod_key),"nasdaq_wiki":bool(wiki_key)},"healthy_public_fallbacks":[name for name,_ in stooq_hosts],"memory_mode":"streaming_symbol_scan"},separators=(",",":")),flush=True)
+ root_cause="historical/delisted dataset unavailable external dependency" if external_blocked else "primary Yahoo endpoint returns 404 for historical/delisted symbols"
+ if not external_blocked and not stooq_hosts:root_cause+="; public Stooq endpoints unreachable from runtime"
+ print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":root_cause,"credentialed_fallbacks":{"alphavantage":alpha_ready,"eodhd":bool(eod_key),"nasdaq_wiki":bool(wiki_key)},"healthy_public_fallbacks":[name for name,_ in stooq_hosts],"external_dependency_blocked":external_blocked,"memory_mode":"streaming_symbol_scan"},separators=(",",":")),flush=True)
  repaired={};used={};error_counts=defaultdict(int)
  provider_memory=memory_get("provider_symbol_failures",{}) or {}
  def one(sym,job_start=None,job_end=None):
