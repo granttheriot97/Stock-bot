@@ -102,7 +102,8 @@ def main():
  print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":root_cause,"credentialed_fallbacks":{"alphavantage":bool(alpha_key),"eodhd":bool(eod_key),"nasdaq_wiki":bool(wiki_key)},"healthy_public_fallbacks":[name for name,_ in stooq_hosts],"memory_mode":"streaming_symbol_scan"},separators=(",",":")),flush=True)
  repaired={};used={};error_counts=defaultdict(int)
  provider_memory=memory_get("provider_symbol_failures",{}) or {}
- def one(sym):
+ def one(sym,job_start=None,job_end=None):
+  lo=job_start or a.start;hi=job_end or a.end
   attempts=[]
   prior=provider_memory.get(sym,{}) if isinstance(provider_memory,dict) else {}
   if eod_key and int(prior.get("eodhd",0))<2: attempts.append(("eodhd",lambda:eodhd(sym,lo,hi,eod_key)))
@@ -121,9 +122,9 @@ def main():
  print(f"B27B_TARGETED_REPAIR jobs={len(partial_jobs)} symbols={len(set(x[0] for x in partial_jobs))} provider_ready={str(bulk_enabled).lower()}",flush=True)
  if bulk_enabled:
   with ThreadPoolExecutor(max_workers=12) as pool:
-   fs=[pool.submit(one,s) for s in missing]
+   fs=[pool.submit(one,s) for s in missing]+[pool.submit(one,s,lo,hi) for s,lo,hi in partial_jobs]
    for f in as_completed(fs):
-    sym,name,rows,errs=f.result()
+    sym,name,rows,errs,lo,hi=f.result()
     for e in errs:
      error_counts[e]+=1
      provider=e.split(':',1)[0]
@@ -138,8 +139,8 @@ def main():
     for row in repaired[sym]:w.writerow(row)
  memory_put("provider_symbol_failures",provider_memory)
  present_after=len(existing|set(repaired))
- attempted=len(missing) if bulk_enabled else 0
- print(f"B27B_SELF_REPAIR_RESULT requested={len(missing)} attempted={attempted} skipped={len(missing)-attempted} repaired_symbols={len(repaired)} present_before={len(existing)} present_after={present_after} errors={dict(error_counts)}",flush=True)
+ requested=len(missing)+len(partial_jobs);attempted=requested if bulk_enabled else 0
+ print(f"B27B_SELF_REPAIR_RESULT requested={requested} attempted={attempted} skipped={requested-attempted} repaired_symbols={len(repaired)} present_before={len(existing)} present_after={present_after} errors={dict(error_counts)}",flush=True)
  if repaired: print("B27B_SELF_REPAIR_VALIDATED_SAMPLE "+",".join(f"{s}:{used[s]}:{len(repaired[s])}" for s in sorted(repaired)[:20]),flush=True)
  if not repaired and not alpha_key and not eod_key and not wiki_key:
   detail="public Stooq fallbacks unavailable from runtime" if not stooq_hosts else "public fallbacks returned no usable missing-symbol histories"
