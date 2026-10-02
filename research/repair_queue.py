@@ -58,7 +58,15 @@ def main():
     with open(a.ledger,"w",newline="") as h:
         w=csv.DictWriter(h,fieldnames=fields); w.writeheader(); w.writerows(rows)
     with open(a.queue,"w") as h: json.dump({"research_only":True,"bars_mutated":False,"gates_changed":False,"items":rows},h,indent=2)
-    snapshot={r["symbol"]:{k:r[k] for k in ("classification","completeness","candidate_successor","seen_count","former","retry_state")} for r in rows}
+    snapshot=dict(prior) if isinstance(prior,dict) else {}
+    current_symbols=set()
+    for r in rows:
+        current_symbols.add(r["symbol"])
+        snapshot[r["symbol"]]={k:r[k] for k in ("classification","completeness","candidate_successor","seen_count","former","retry_state")}
+        snapshot[r["symbol"]]["status"]="unresolved"
+    for symbol,item in list(snapshot.items()):
+        if symbol not in current_symbols and isinstance(item,dict):
+            item["status"]="repaired_or_complete"
     memory_put("repair_ledger",snapshot)
     repeated=sum(1 for r in rows if r["seen_count"]>1 and not r["improved_since_last"])
     print(f"B27B_REPAIR_MEMORY persisted={len(snapshot)} repeated_no_gain={repeated}",flush=True)
