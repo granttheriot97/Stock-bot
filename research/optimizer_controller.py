@@ -1,7 +1,7 @@
 """B27B optimization controller: research-only scheduling, failure memory, and telemetry.
 It may optimize work ordering, never research gates, strategy parameters, permissions, or trading.
 """
-import json,os,time,hashlib
+import json,os,time,hashlib\nfrom persistent_memory import get as memory_get,put as memory_put
 from dataclasses import dataclass,asdict
 
 STATE=os.getenv("B27B_STATE_DIR","/tmp/b27b_state")
@@ -10,6 +10,8 @@ LOCKED={"overall_coverage_gate":0.90,"former_coverage_gate":0.90,"symbol_complet
         "live_authorized":False,"may_change_strategy":False,"may_change_policy":False}
 
 def _load():
+    remote=memory_get("optimizer_state")
+    if isinstance(remote,dict) and remote.get("locked")==LOCKED:return remote
     try:return json.load(open(PATH))
     except Exception:return {"version":1,"locked":LOCKED,"tasks":{},"events":[]}
 
@@ -17,6 +19,7 @@ def _save(s):
     os.makedirs(STATE,exist_ok=True); tmp=PATH+".tmp"
     with open(tmp,"w") as h:json.dump(s,h,indent=2,sort_keys=True)
     os.replace(tmp,PATH)
+    memory_put("optimizer_state",s)
 
 def assert_locked(s):
     if s.get("locked")!=LOCKED: raise SystemExit("B27B_OPTIMIZER BLOCK locked_invariants_changed")
