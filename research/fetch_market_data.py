@@ -5,7 +5,7 @@ import argparse,csv,json,time,urllib.parse,urllib.request,datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 DEFAULT=["SPY","QQQ","IWM","DIA","AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA","JPM","V","XOM","UNH","COST","HD","AMD","NFLX","AVGO","MA","WMT","LLY","ORCL","CRM","BAC","KO","PEP","CSCO","IBM","INTC","QCOM","TXN","AMAT","GE","CAT","BA","DIS","MCD","NKE","LOW","GS","MS","AXP","CVX","COP","ABBV","MRK","TMO","LIN"]
 def fetch(symbol,years=10,as_of=None):
-    as_of=as_of or as_of
+    as_of=as_of or datetime.datetime.now(datetime.timezone.utc).date()
     end=int(datetime.datetime.combine(as_of+datetime.timedelta(days=1),datetime.time.min,tzinfo=datetime.timezone.utc).timestamp())
     start=end-int(years*365.25*86400)
     url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(symbol.replace(".", "-"))+"?period1="+str(start)+"&period2="+str(end)+"&interval=1d&events=div%2Csplits&includeAdjustedClose=true"
@@ -26,7 +26,7 @@ def fetch(symbol,years=10,as_of=None):
     return rows
 def main():
     p=argparse.ArgumentParser();p.add_argument("--symbols",default=",".join(DEFAULT));p.add_argument("--membership-universe",action="store_true");p.add_argument("--former-plus-default",action="store_true");p.add_argument("--years",type=int,default=10);p.add_argument("--as-of",default=None);p.add_argument("--out",default="research/bars.csv");p.add_argument("--resume",action="store_true");a=p.parse_args()
-    as_of=datetime.date.fromisoformat(a.as_of) if a.as_of else as_of
+    as_of=datetime.date.fromisoformat(a.as_of) if a.as_of else datetime.datetime.now(datetime.timezone.utc).date()
     syms=[x.strip().upper() for x in a.symbols.split(",") if x.strip()]
     if a.membership_universe:
         cutoff=(as_of-datetime.timedelta(days=int(a.years*365.25))).isoformat()
