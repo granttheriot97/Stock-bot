@@ -23,9 +23,15 @@ def main():
     if a.role=="former_tickers":
         q=read_json(a.queue,{"items":[]})
         items=[x for x in q.get("items",[]) if x.get("former")]
+        def next_check(x):
+            cls=x.get("classification")
+            if cls=="rename_candidate": return "validate_successor_and_effective_date"
+            if cls=="former_unresolved": return "classify_corporate_fate"
+            if cls=="partial_history": return "target_missing_date_range_from_alternate_source"
+            return "alternate_history_source"
         proposals=[{"symbol":x.get("symbol"),"classification":x.get("classification"),"completeness":x.get("completeness"),
-                    "next_check":"corporate_action" if x.get("classification") in ("missing_history","known_ticker_transition") else "alternate_history_source"}
-                   for x in items[:40]]
+                    "retry_state":x.get("retry_state","active"),"next_check":next_check(x)}
+                   for x in items if x.get("retry_state")!="deprioritize_no_gain"][:60]
     elif a.role=="corporate_actions":
         r=read_json(a.renames,{"results":[]})
         proposals=[{"old_symbol":x.get("old_symbol"),"new_symbol":x.get("new_symbol"),"effective_date":x.get("effective_date"),
