@@ -36,9 +36,9 @@ def main():
         obs=bars.get(s,set()) & expected
         comp=len(obs)/len(expected) if expected else 0.0
         if comp>=0.90: continue
-        if not bars.get(s): cls="missing_history"
+        if not bars.get(s): cls="former_unresolved" if s in former else "missing_history"
         else: cls="partial_history"
-        if s in aliases: cls="known_ticker_transition"
+        if s in aliases: cls="rename_candidate"
         old=prior.get(s,{}) if isinstance(prior,dict) else {}
         seen=int(old.get("seen_count",0))+1
         previous=float(old.get("completeness",0) or 0)
