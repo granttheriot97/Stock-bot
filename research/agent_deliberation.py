@@ -17,10 +17,10 @@ def main():
     disputed=[x for x in corp if x.get("action")=="needs_more_evidence"];ready=[x for x in corp if x.get("action")=="submit_to_gatekeeper"]
     unhealthy=[x for x in src if not x.get("healthy")]
     msgs=[
-      say("Former Tickers",f"I have {len(partial)} partial histories and {len(unresolved)} unresolved former identities in my current proposal set.",.98,"specialist_former_tickers"),
-      say("Corporate Actions",f"I have {len(ready)} transition candidates ready for Gatekeeper review and {len(disputed)} that still need evidence.",.99,"specialist_corporate_actions","challenge","Former Tickers"),
-      say("Data Sources",f"I see {len(unhealthy)} unhealthy provider paths. I recommend avoiding known dead retries and looking for an alternate legitimate source.",.99,"specialist_data_sources","response","team"),
-      say("Bottlenecks","I recommend targeting missing ranges for partial histories before expensive full-history recovery.",.95,"repair_queue+pipeline_manifest","proposal","Former Tickers"),
+      say("ARCHIVIST",f"I have {len(partial)} partial histories and {len(unresolved)} unresolved former identities in my current proposal set.",.98,"specialist_former_tickers"),
+      say("ORACLE",f"I have {len(ready)} transition candidates ready for Gatekeeper review and {len(disputed)} that still need evidence.",.99,"specialist_corporate_actions","challenge","ARCHIVIST"),
+      say("CIPHER",f"I see {len(unhealthy)} unhealthy provider paths. I recommend avoiding known dead retries and looking for an alternate legitimate source.",.99,"specialist_data_sources","response","team"),
+      say("PULSE","I recommend targeting missing ranges for partial histories before expensive full-history recovery.",.95,"repair_queue+pipeline_manifest","proposal","ARCHIVIST"),
       say("GATEKEEPER","Discussion noted. Consensus is not approval; evidence and fixed gates remain controlling.",1.0,"fixed_gate_policy","decision","team")]
     priorities=[
       {"issue":"partial_history","count":len(partial),"position":"target missing ranges before full redownload","confidence":.95},
