@@ -1,7 +1,7 @@
 """Bounded self-repair for recoverable historical-data coverage failures.
 Data repair only: never changes policy, validation thresholds, permissions, strategy, or trading.
 """
-import argparse,csv,io,json,os,subprocess,sys,urllib.error,urllib.parse,urllib.request
+import argparse,csv,io,json,os,subprocess,sys,time,urllib.error,urllib.parse,urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor,as_completed
 
@@ -66,13 +66,21 @@ def main():
  missing=sorted(historical-existing)
  alpha_key=os.getenv("ALPHAVANTAGE_API_KEY","").strip(); eod_key=os.getenv("EODHD_API_TOKEN","").strip()
  stooq_hosts=[]
+ health_path="/tmp/b27b_provider_health.json"; cached=None
+ try:
+  with open(health_path) as h: cached=json.load(h)
+  if time.time()-float(cached.get("time",0))>1800: cached=None
+ except Exception: cached=None
  for name,host in (("stooq-com","https://stooq.com/q/d/l/"),("stooq-pl","https://stooq.pl/q/d/l/")):
-  rows=0;err=None
-  try: rows=len(stooq("SPY",a.start,a.end,host))
-  except Exception as exc: err=error_detail(exc)
-  healthy=rows>=252 and err is None
+  rows=0;err=None;cache_hit=False
+  if name=="stooq-com" and cached and "stooq_com" in cached:
+   item=cached["stooq_com"]; rows=int(item.get("rows",0)); err=item.get("error"); healthy=bool(item.get("healthy")); cache_hit=True
+  else:
+   try: rows=len(stooq("SPY",a.start,a.end,host))
+   except Exception as exc: err=error_detail(exc)
+   healthy=rows>=252 and err is None
   if healthy:stooq_hosts.append((name,host))
-  print(f"B27B_SELF_REPAIR_CONTROL source={name} symbol=SPY rows={rows} status={'HEALTHY' if healthy else 'UNREACHABLE'} error={err or '-'}",flush=True)
+  print(f"B27B_SELF_REPAIR_CONTROL source={name} symbol=SPY rows={rows} status={'HEALTHY' if healthy else 'UNREACHABLE'} error={err or '-'} cache_hit={str(cache_hit).lower()}",flush=True)
  root_cause="primary Yahoo endpoint returns 404 for historical/delisted symbols"
  if not stooq_hosts:root_cause+="; public Stooq endpoints unreachable from runtime"
  print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":root_cause,"credentialed_fallbacks":{"alphavantage":bool(alpha_key),"eodhd":bool(eod_key)},"healthy_public_fallbacks":[name for name,_ in stooq_hosts],"memory_mode":"streaming_symbol_scan"},separators=(",",":")),flush=True)
