@@ -37,9 +37,9 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200);self.send_header("Content-Type",ctype);self.send_header("Cache-Control","no-store")
         self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
     def do_GET(self):
-        if self.path=="/api/status":
+        route=self.path.split("?",1)[0].rstrip("/") or "/"\n        if route=="/api/status":
             return self.send_bytes(json.dumps(snapshot()).encode(),"application/json")
-        if self.path=="/" or self.path=="/command-center" or self.path=="/command-center/":
+        if route=="/" or route=="/command-center":
             path=os.path.join(DASH,"index.html")
         elif self.path.startswith("/command-center/"):
             rel=self.path[len("/command-center/"):].split("?",1)[0]
