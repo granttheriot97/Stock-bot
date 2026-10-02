@@ -31,7 +31,8 @@ def main():
         raise SystemExit("SPY is required for ticker-rename validation")
     calendar=sorted(bars["SPY"])
 
-    # End dates are effective transition dates, so membership is [start, end).\n    periods=defaultdict(list)
+    # End dates are effective transition dates, so membership is [start, end).
+    periods=defaultdict(list)
     with open(a.membership,newline="") as h:
         for row in csv.DictReader(h):
             periods[row["ticker"].strip().upper()].append(
