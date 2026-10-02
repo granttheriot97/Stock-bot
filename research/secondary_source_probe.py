@@ -61,14 +61,19 @@ def main():
     errors={}
     control_rows=0
     control_error=None
-    try:
-        control_rows=probe("SPY",a.start,a.end)
-    except Exception as exc:
-        control_error=error_detail(exc)
+    external_dependency=os.getenv("B27B_HISTORICAL_EXTERNAL_DEPENDENCY","unavailable").strip().lower()
+    external_blocked=external_dependency in ("unavailable","blocked","1","true","yes")
+    if external_blocked:
+        control_error="external_dependency_unavailable"
+    else:
+        try:
+            control_rows=probe("SPY",a.start,a.end)
+        except Exception as exc:
+            control_error=error_detail(exc)
     control_ok=control_rows>=252 and control_error is None
     health_path="/tmp/b27b_provider_health.json"
     with open(health_path,"w") as health:
-        json.dump({"time":time.time(),"stooq_com":{"healthy":control_ok,"rows":control_rows,"error":control_error}},health)
+        json.dump({"time":time.time(),"external_dependency_blocked":external_blocked,"stooq_com":{"healthy":control_ok,"rows":control_rows,"error":control_error}},health)
     print(f"B27B_PROVIDER_HEALTH_CACHE path={health_path} stooq_com={'HEALTHY' if control_ok else 'UNREACHABLE'}",flush=True)
     print(
         f"B27B_SECONDARY_CONTROL source=stooq symbol=SPY rows={control_rows} "
@@ -113,7 +118,7 @@ def main():
         (",".join(f"{symbol}:{errors[symbol]}" for symbol in sorted(errors)[:20]) or "-"),
         flush=True,
     )
-    status="NOT_INTEGRATED" if control_ok else "PROVIDER_UNREACHABLE_NOT_INTEGRATED"
+    status="NOT_INTEGRATED" if control_ok else ("EXTERNAL_DEPENDENCY_UNAVAILABLE_NOT_INTEGRATED" if external_blocked else "PROVIDER_UNREACHABLE_NOT_INTEGRATED")
     print("B27B_SECONDARY_STATUS "+status,flush=True)
 
 if __name__=="__main__":
