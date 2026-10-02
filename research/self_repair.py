@@ -11,11 +11,13 @@ def memberships(path,end):
   for r in csv.DictReader(h): d[r["ticker"].strip().upper()].append((r["start_date"],r["end_date"] or end))
  return d
 
-def rows_by_symbol(path):
- d=defaultdict(list)
+def symbols_present(path):
+ out=set()
  with open(path,newline="") as h:
-  for r in csv.DictReader(h): d[r["symbol"].strip().upper()].append(r)
- return d
+  for r in csv.DictReader(h):
+   s=r.get("symbol","").strip().upper()
+   if s: out.add(s)
+ return out
 
 def valid_values(date,o,hi,lo,c,v,start,end):
  try:
@@ -34,30 +36,29 @@ def normalize(symbol,records,start,end):
 
 def stooq(symbol,start,end,host):
  q=urllib.parse.urlencode({"s":symbol.lower()+".us","d1":start.replace("-",""),"d2":end.replace("-",""),"i":"d"})
- req=urllib.request.Request(host+"?"+q,headers={"User-Agent":"Mozilla/5.0 B27B-research-repair/2.0"})
+ req=urllib.request.Request(host+"?"+q,headers={"User-Agent":"Mozilla/5.0 B27B-research-repair/2.1"})
  with urllib.request.urlopen(req,timeout=4) as x: body=x.read().decode("utf-8","replace")
- return normalize(symbol,list(csv.DictReader(io.StringIO(body))),start,end)
+ return normalize(symbol,csv.DictReader(io.StringIO(body)),start,end)
 
 def alpha(symbol,start,end,key):
  q=urllib.parse.urlencode({"function":"TIME_SERIES_DAILY","symbol":symbol,"outputsize":"full","datatype":"csv","apikey":key})
- req=urllib.request.Request("https://www.alphavantage.co/query?"+q,headers={"User-Agent":"B27B-research-repair/2.0"})
+ req=urllib.request.Request("https://www.alphavantage.co/query?"+q,headers={"User-Agent":"B27B-research-repair/2.1"})
  with urllib.request.urlopen(req,timeout=12) as x: body=x.read().decode("utf-8","replace")
- return normalize(symbol,list(csv.DictReader(io.StringIO(body))),start,end)
+ return normalize(symbol,csv.DictReader(io.StringIO(body)),start,end)
 
 def eodhd(symbol,start,end,key):
  q=urllib.parse.urlencode({"api_token":key,"fmt":"json","from":start,"to":end})
- req=urllib.request.Request(f"https://eodhd.com/api/eod/{urllib.parse.quote(symbol+'.US')}?"+q,headers={"User-Agent":"B27B-research-repair/2.0"})
+ req=urllib.request.Request(f"https://eodhd.com/api/eod/{urllib.parse.quote(symbol+'.US')}?"+q,headers={"User-Agent":"B27B-research-repair/2.1"})
  with urllib.request.urlopen(req,timeout=12) as x: data=json.loads(x.read().decode("utf-8","replace"))
  return normalize(symbol,data if isinstance(data,list) else [],start,end)
 
 def main():
  p=argparse.ArgumentParser();p.add_argument("--bars",required=True);p.add_argument("--membership",required=True);p.add_argument("--start",required=True);p.add_argument("--end",required=True);a=p.parse_args()
- periods=memberships(a.membership,a.end); existing=rows_by_symbol(a.bars)
+ periods=memberships(a.membership,a.end); existing=symbols_present(a.bars)
  historical={s for s,spans in periods.items() if any(st<=a.end and en>=a.start for st,en in spans)}
- # Repair wholly missing symbols first. The unchanged audit remains authoritative for incomplete symbols.
- missing=sorted(historical-set(existing))
+ missing=sorted(historical-existing)
  alpha_key=os.getenv("ALPHAVANTAGE_API_KEY","").strip(); eod_key=os.getenv("EODHD_API_TOKEN","").strip()
- print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":"primary Yahoo endpoint returns 404 for historical/delisted symbols; Stooq endpoint is unreachable from current runtime","credentialed_fallbacks":{"alphavantage":bool(alpha_key),"eodhd":bool(eod_key)}},separators=(",",":")),flush=True)
+ print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":"primary Yahoo endpoint returns 404 for historical/delisted symbols; public Stooq endpoint unreachable from runtime","credentialed_fallbacks":{"alphavantage":bool(alpha_key),"eodhd":bool(eod_key)},"memory_mode":"streaming_symbol_scan"},separators=(",",":")),flush=True)
  repaired={};used={};error_counts=defaultdict(int)
  def one(sym):
   attempts=[]
@@ -83,7 +84,8 @@ def main():
    w=csv.writer(h)
    for sym in sorted(repaired):
     for row in repaired[sym]:w.writerow(row)
- print(f"B27B_SELF_REPAIR_RESULT attempted={len(missing)} repaired_symbols={len(repaired)} present_before={len(existing)} present_after={len(rows_by_symbol(a.bars))} errors={dict(error_counts)}",flush=True)
+ present_after=len(existing|set(repaired))
+ print(f"B27B_SELF_REPAIR_RESULT attempted={len(missing)} repaired_symbols={len(repaired)} present_before={len(existing)} present_after={present_after} errors={dict(error_counts)}",flush=True)
  if repaired: print("B27B_SELF_REPAIR_VALIDATED_SAMPLE "+",".join(f"{s}:{used[s]}:{len(repaired[s])}" for s in sorted(repaired)[:20]),flush=True)
  if not repaired and not alpha_key and not eod_key:
   print("B27B_SELF_REPAIR_BLOCKER no_credentialed_delisted_price_source_configured; public Stooq fallback unavailable from runtime",flush=True)
