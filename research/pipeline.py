@@ -42,7 +42,7 @@ def main():
     mem="research/data/sp500_ticker_start_end.csv"
     bars="/tmp/b27b_bars.csv"
     stage("former_probe","python research/former_data_probe.py",[mem],[],years,1)
-    stage("market_fetch",f'python research/fetch_market_data.py --former-plus-default --resume --years "{years}" --as-of "{as_of}" --out {bars}',[mem],[bars],years+"|"+as_of,2)
+    stage("market_fetch",f'python research/fetch_market_data.py --membership-universe --resume --years "{years}" --as-of "{as_of}" --out {bars}',[mem],[bars],"full_membership|"+years+"|"+as_of,2)
     stage("universe_audit",f"python research/universe_audit.py --bars {bars}",[mem,bars],[],years,0)
     stage("agent_security","python research/agents/security_test.py",["research/agents/agent_policy.json","research/agents/supervisor.py"],[],years+"|"+cost,0)
     stage("agent_supervisor","python research/agents/supervisor.py",["research/agents/agent_policy.json","research/agents/supervisor.py"],[],years+"|"+cost,0)
