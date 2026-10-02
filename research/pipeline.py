@@ -51,9 +51,7 @@ def stage(name,cmd,inputs=(),outputs=(),extra="",retries=1,timeout=None,deps=())
                 returncode=p.wait()
             log.seek(0)
             output_tail="".join(deque(log,maxlen=400))
-        if output_tail:print(output_tail,end="" if output_tail.endswith("
-") else "
-",flush=True)
+        if output_tail:print(output_tail,end="" if output_tail.endswith("\n") else "\n",flush=True)
         if timed_out:
             returncode=124
             print(f"B27B_STAGE_TIMEOUT stage={name} attempt={attempt} seconds={timeout}",flush=True)
