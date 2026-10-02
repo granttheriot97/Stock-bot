@@ -1,0 +1,68 @@
+{
+  "generated_at": "2026-10-02T06:43:09.105272+00:00",
+  "frozen_live_threshold": 0.01,
+  "observations": 3493,
+  "markets": 80,
+  "qualifying": 0,
+  "rejected": 3493,
+  "edge": {
+    "mean": -0.011073,
+    "median": -0.01,
+    "best": -0.01,
+    "worst": -0.12
+  },
+  "market_timing": {
+    "first_5m": {
+      "observations": 784,
+      "qualifying": 0,
+      "mean_edge": -0.010548,
+      "best_edge": -0.01
+    },
+    "middle_5m": {
+      "observations": 1599,
+      "qualifying": 0,
+      "mean_edge": -0.010757,
+      "best_edge": -0.01
+    },
+    "last_5m": {
+      "observations": 1102,
+      "qualifying": 0,
+      "mean_edge": -0.011906,
+      "best_edge": -0.01
+    },
+    "unknown": {
+      "observations": 8,
+      "qualifying": 0,
+      "mean_edge": null,
+      "best_edge": null
+    }
+  },
+  "counterfactual_thresholds_research_only": {
+    "0.0": {
+      "signals": 0,
+      "rate": 0.0
+    },
+    "0.005": {
+      "signals": 0,
+      "rate": 0.0
+    },
+    "0.01": {
+      "signals": 0,
+      "rate": 0.0
+    },
+    "0.015": {
+      "signals": 0,
+      "rate": 0.0
+    },
+    "0.02": {
+      "signals": 0,
+      "rate": 0.0
+    }
+  },
+  "coverage": {
+    "median_within_market_gap_seconds": 10.11,
+    "gaps_over_60s": 2,
+    "gaps_over_300s": 1
+  },
+  "warning": "Counterfactual thresholds are offline research only and must not change the frozen forward-test rule."
+}
