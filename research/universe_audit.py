@@ -26,7 +26,8 @@ def main():
     if "SPY" not in bars:
         raise SystemExit("SPY is required for the trading-calendar audit")
     calendar=sorted(date for date in bars["SPY"] if a.start<=date<=a.end)
-    # Membership intervals are [start, end): replacement tickers become active on the effective date.\n    periods=defaultdict(list)
+    # Membership intervals are [start, end): replacement tickers become active on the effective date.
+    periods=defaultdict(list)
     for row in rows:
         ticker=row["ticker"].strip().upper()
         periods[ticker].append((row["start_date"],row["end_date"] or None))
