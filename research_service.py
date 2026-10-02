@@ -5,11 +5,9 @@ from research.persistent_memory import get as memory_get,put as memory_put
 S={"status":"starting","started_at":time.time(),"output":"","error":None,"checkpoint":None,"active_stage":None,"stage_started_at":None,"last_event":None,"event_count":0}
 ROOT=os.path.dirname(os.path.abspath(__file__));DASH=os.path.join(ROOT,"research_dashboard")
 def ingest(line,lines):
-    line=line.rstrip("
-");lines.append(line)
+    line=line.rstrip("\n");lines.append(line)
     if len(lines)>4000:del lines[:-4000]
-    S["output"]="
-".join(lines);S["last_event"]=line;S["event_count"]+=1
+    S["output"]="\n".join(lines);S["last_event"]=line;S["event_count"]+=1
     if line.startswith("B27B_STAGE_START stage="):
         S["active_stage"]=line.split("stage=",1)[1].split()[0];S["stage_started_at"]=time.time()
     elif line.startswith("B27B_STAGE_COMPLETE stage="):
@@ -48,9 +46,14 @@ class H(BaseHTTPRequestHandler):
         if route not in ("/api/agent-chat","/api/research-command"):self.send_error(404);return
         if route=="/api/research-command":
             try:
-                n=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(n) or b"{}");agent=str(body.get("agent","")).strip().upper();symbol=str(body.get("symbol","")).strip().upper();task=str(body.get("task","")).strip()[:500]
+                n=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(n) or b"{}")
+                agent=str(body.get("agent","")).strip().upper();symbol=str(body.get("symbol","")).strip().upper();task=str(body.get("task","")).strip()[:500]
                 if agent not in {"ARCHIVIST","ORACLE","CIPHER","PULSE"} or not symbol or not task:raise ValueError("invalid command")
-                tasks=memory_get("agent_task_queue",[]) or [];item={"id":"human:"+str(int(time.time()*1000)),"symbol":symbol,"from":"HUMAN COMMAND","to":agent,"status":"OPEN","task":task,"created_at":time.time()};tasks.append(item);memory_put("agent_task_queue",tasks[-500:]);events=memory_get("research_events",[]) or [];events.append({"time":time.time(),"type":"TASK ASSIGNED","ticker":symbol,"text":agent+" assigned: "+task});memory_put("research_events",events[-500:]);return self.send_bytes(json.dumps(item).encode(),"application/json")
+                tasks=memory_get("agent_task_queue",[]) or []
+                item={"id":"human:"+str(int(time.time()*1000)),"symbol":symbol,"from":"HUMAN COMMAND","to":agent,"status":"OPEN","task":task,"created_at":time.time()}
+                tasks.append(item);memory_put("agent_task_queue",tasks[-500:])
+                events=memory_get("research_events",[]) or [];events.append({"time":time.time(),"type":"TASK ASSIGNED","ticker":symbol,"text":agent+" assigned: "+task});memory_put("research_events",events[-500:])
+                return self.send_bytes(json.dumps(item).encode(),"application/json")
             except Exception as e:self.send_response(400);self.end_headers();self.wfile.write(str(e).encode());return
         try:
             n=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(n) or b"{}")
@@ -58,29 +61,7 @@ class H(BaseHTTPRequestHandler):
             allowed={"Former Tickers","Corporate Actions","Data Sources","Bottlenecks","JARVIS","VISION","ULTRON","EDITH","GATEKEEPER"}
             if agent not in allowed or not message:raise ValueError("invalid agent or message")
             room=memory_get("agent_chat_threads",{}) or {};thread=room.get(agent,[])
-            discussion=memory_get("agent_deliberation_latest",{}) or {};history=memory_get("agent_discussion_history",[]) or []
-            display={"Former Tickers":"ARCHIVIST","Corporate Actions":"ORACLE","Data Sources":"CIPHER","Bottlenecks":"PULSE"}.get(agent,agent)\n            relevant=[x for x in history if x.get("agent") in (agent,display)][-5:]
-            priorities=(discussion.get("priorities",[]) if isinstance(discussion,dict) else [])
-            q=message.lower()
-            if "how" in q and ("doing" in q or "going" in q):
-                if relevant:
-                    latest=relevant[-1];answer=latest.get("text","No current finding.")+" My latest evidence source is "+str(latest.get("evidence","unknown"))+"."
-                else: answer="I do not have a completed finding in the current research-room history yet."
-            elif "working" in q or "doing now" in q:
-                own=[x for x in priorities if (agent=="Former Tickers" and x.get("issue") in ("partial_history","former_identity")) or (agent=="Corporate Actions" and x.get("issue")=="corporate_action_disputes") or (agent=="Data Sources" and x.get("issue")=="provider_outages")]
-                answer=("My current research priority is "+own[0].get("position","")+".") if own else "I am waiting for a role-specific research task or new evidence."
-            elif "block" in q or "stopping" in q:
-                own=[x for x in priorities if x.get("count",0)>0]
-                answer=("The current blocker I can substantiate is "+own[0].get("issue","unknown").replace("_"," ")+", affecting "+str(own[0].get("count"))+" items.") if own else "I do not have a substantiated blocker recorded right now."
-            elif "disagree" in q or "challenge" in q:
-                challenges=[x for x in history if x.get("agent") in (agent,display) and x.get("kind")=="challenge"][-3:]
-                answer=challenges[-1].get("text") if challenges else "I do not have a recorded evidence-based disagreement right now."
-            elif "next" in q or "recommend" in q:
-                answer=("My evidence-backed next priority is: "+priorities[0].get("position","")+".") if priorities else "I do not have enough current evidence to recommend a research priority."
-            else:
-                context=" ".join(x.get("text","") for x in relevant[-2:])
-                answer=("From my current B27B record: "+context) if context else "I do not have enough role-specific evidence recorded to answer that yet."
-            reply={"agent":agent,"time":time.time(),"user":message,"reply":answer,"evidence_count":len(relevant),"mode":"evidence_grounded_role_chat","authority":"proposal_only"}
+            reply={"agent":agent,"time":time.time(),"user":message,"reply":"Message received. I will treat this as a research question within my assigned role. I cannot change gates, strategy, policy, authorize live trading, or approve my own evidence.","mode":"role_scoped_research_chat","authority":"proposal_only"}
             thread.append(reply);room[agent]=thread[-100:];memory_put("agent_chat_threads",room)
             self.send_bytes(json.dumps(reply).encode(),"application/json")
         except Exception as e:
