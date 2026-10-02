@@ -43,7 +43,7 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200);self.send_header("Content-Type",ctype);self.send_header("Cache-Control","no-store, no-cache, must-revalidate");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
     def do_POST(self):
         route=self.path.split("?",1)[0].rstrip("/") or "/"
-        if route!="/api/agent-chat":self.send_error(404);return
+        if route not in ("/api/agent-chat","/api/research-command"):self.send_error(404);return\n        if route=="/api/research-command":\n            try:\n                n=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(n) or b"{}");agent=str(body.get("agent","")).strip().upper();symbol=str(body.get("symbol","")).strip().upper();task=str(body.get("task","")).strip()[:500]\n                if agent not in {"ARCHIVIST","ORACLE","CIPHER","PULSE"} or not symbol or not task:raise ValueError("invalid command")\n                tasks=memory_get("agent_task_queue",[]) or [];item={"id":"human:"+str(int(time.time()*1000)),"symbol":symbol,"from":"HUMAN COMMAND","to":agent,"status":"OPEN","task":task,"created_at":time.time()};tasks.append(item);memory_put("agent_task_queue",tasks[-500:]);events=memory_get("research_events",[]) or [];events.append({"time":time.time(),"type":"TASK ASSIGNED","ticker":symbol,"text":agent+" assigned: "+task});memory_put("research_events",events[-500:]);return self.send_bytes(json.dumps(item).encode(),"application/json")\n            except Exception as e:self.send_response(400);self.end_headers();self.wfile.write(str(e).encode());return
         try:
             n=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(n) or b"{}")
             agent=str(body.get("agent","")).strip();message=str(body.get("message","")).strip()[:2000]
@@ -81,7 +81,7 @@ class H(BaseHTTPRequestHandler):
         route=self.path.split("?",1)[0].rstrip("/") or "/"
         if route=="/api/status":return self.send_bytes(json.dumps(snapshot()).encode(),"application/json")
         if route=="/api/research-room":
-            data={"discussion":memory_get("agent_deliberation_latest",{}),"history":memory_get("agent_discussion_history",[]),"room":memory_get("agent_research_room",{}),"chats":memory_get("agent_chat_threads",{}),"cases":memory_get("ticker_case_files",{}),"tasks":memory_get("agent_task_queue",[]),"activity":memory_get("agent_activity",{}),"coverage_history":memory_get("coverage_history",[])}
+            data={"discussion":memory_get("agent_deliberation_latest",{}),"history":memory_get("agent_discussion_history",[]),"room":memory_get("agent_research_room",{}),"chats":memory_get("agent_chat_threads",{}),"cases":memory_get("ticker_case_files",{}),"tasks":memory_get("agent_task_queue",[]),"activity":memory_get("agent_activity",{}),"coverage_history":memory_get("coverage_history",[]),"evidence":memory_get("evidence_vault",[]),"events":memory_get("research_events",[])}
             return self.send_bytes(json.dumps(data).encode(),"application/json")
         if route in ("/","/command-center"):path=os.path.join(DASH,"index.html")
         elif route.startswith("/command-center/"):
