@@ -77,7 +77,7 @@ def main():
             try: results.append(future.result())
             except Exception as exc:
                 last_year=max(end.year for _,end in grouped[symbol])
-                results.append((symbol,last_year,0.0,False,False,type(exc).__name__))
+                results.append((symbol,last_year,0.0,False,False,type(exc).__name__))\n            if completed==1 or completed%10==0 or completed==len(futures):\n                print(f"B27B_FORMER_PROGRESS completed={completed} total={len(futures)} pct={completed/len(futures)*100:.1f}",flush=True)
     total=len(results); fetched=sum(error is None for *_,error in results)
     usable=sum(row[3] for row in results); ready=sum(row[4] for row in results)
     failures=sorted(row[0] for row in results if row[5] is not None)
