@@ -2,8 +2,8 @@
 
 Diagnostic only: data are never merged into the research bars or used by a strategy.
 """
-import argparse,csv,io,urllib.parse,urllib.request
-from collections import defaultdict
+import argparse,csv,io,urllib.error,urllib.parse,urllib.request
+from collections import Counter,defaultdict
 from concurrent.futures import ThreadPoolExecutor,as_completed
 
 def probe(symbol,start,end):
@@ -58,7 +58,10 @@ def main():
                 if rows:
                     available[symbol]=rows
             except Exception as exc:
-                errors[symbol]=type(exc).__name__
+                detail=type(exc).__name__
+                if isinstance(exc,urllib.error.HTTPError):
+                    detail+=f":{exc.code}"
+                errors[symbol]=detail
     momentum_ready={symbol:rows for symbol,rows in available.items() if rows>=252}
     print(
         f"B27B_SECONDARY_PROBE source=stooq diagnostic_only=true requested={len(missing)} "
@@ -69,6 +72,17 @@ def main():
     print(
         "B27B_SECONDARY_AVAILABLE_SAMPLE "+
         (",".join(f"{symbol}:{available[symbol]}" for symbol in sorted(available)[:20]) or "-"),
+        flush=True,
+    )
+    error_counts=Counter(errors.values())
+    print(
+        "B27B_SECONDARY_ERROR_COUNTS "+
+        (",".join(f"{name}:{count}" for name,count in sorted(error_counts.items())) or "-"),
+        flush=True,
+    )
+    print(
+        "B27B_SECONDARY_ERROR_SAMPLE "+
+        (",".join(f"{symbol}:{errors[symbol]}" for symbol in sorted(errors)[:20]) or "-"),
         flush=True,
     )
     print("B27B_SECONDARY_STATUS NOT_INTEGRATED",flush=True)
