@@ -1,6 +1,7 @@
 """Free Render-compatible B27B research service with streaming read-only telemetry."""
-import json,os,subprocess,threading,time,mimetypes
-from http.server import BaseHTTPRequestHandler,HTTPServer
+import json,os,subprocess,threading,time,mimetypes,urllib.parse
+from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+from research.persistent_memory import get as memory_get,put as memory_put
 S={"status":"starting","started_at":time.time(),"output":"","error":None,"checkpoint":None,"active_stage":None,"stage_started_at":None,"last_event":None,"event_count":0}
 ROOT=os.path.dirname(os.path.abspath(__file__));DASH=os.path.join(ROOT,"research_dashboard")
 def ingest(line,lines):
@@ -40,9 +41,26 @@ def snapshot():
 class H(BaseHTTPRequestHandler):
     def send_bytes(self,b,ctype):
         self.send_response(200);self.send_header("Content-Type",ctype);self.send_header("Cache-Control","no-store, no-cache, must-revalidate");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
+    def do_POST(self):
+        route=self.path.split("?",1)[0].rstrip("/") or "/"
+        if route!="/api/agent-chat":self.send_error(404);return
+        try:
+            n=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(n) or b"{}")
+            agent=str(body.get("agent","")).strip();message=str(body.get("message","")).strip()[:2000]
+            allowed={"Former Tickers","Corporate Actions","Data Sources","Bottlenecks","JARVIS","VISION","ULTRON","EDITH","GATEKEEPER"}
+            if agent not in allowed or not message:raise ValueError("invalid agent or message")
+            room=memory_get("agent_chat_threads",{}) or {};thread=room.get(agent,[])
+            reply={"agent":agent,"time":time.time(),"user":message,"reply":"Message received. I will treat this as a research question within my assigned role. I cannot change gates, strategy, policy, authorize live trading, or approve my own evidence.","mode":"role_scoped_research_chat","authority":"proposal_only"}
+            thread.append(reply);room[agent]=thread[-100:];memory_put("agent_chat_threads",room)
+            self.send_bytes(json.dumps(reply).encode(),"application/json")
+        except Exception as e:
+            self.send_response(400);self.end_headers();self.wfile.write(str(e).encode())
     def do_GET(self):
         route=self.path.split("?",1)[0].rstrip("/") or "/"
         if route=="/api/status":return self.send_bytes(json.dumps(snapshot()).encode(),"application/json")
+        if route=="/api/research-room":
+            data={"discussion":memory_get("agent_deliberation_latest",{}),"room":memory_get("agent_research_room",{}),"chats":memory_get("agent_chat_threads",{})}
+            return self.send_bytes(json.dumps(data).encode(),"application/json")
         if route in ("/","/command-center"):path=os.path.join(DASH,"index.html")
         elif route.startswith("/command-center/"):
             rel=route[len("/command-center/"):]
@@ -55,4 +73,4 @@ class H(BaseHTTPRequestHandler):
         except FileNotFoundError:self.send_error(404)
     def log_message(self,*a):pass
 threading.Thread(target=run,daemon=True).start()
-HTTPServer(("0.0.0.0",int(os.getenv("PORT","10000"))),H).serve_forever()
+ThreadingHTTPServer(("0.0.0.0",int(os.getenv("PORT","10000"))),H).serve_forever()
