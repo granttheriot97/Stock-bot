@@ -46,22 +46,19 @@ def main():
                 (row["start_date"], row["end_date"] or None)
             )
 
-    new_to_old = {
-        item["new_symbol"]: old for old, item in candidates.items()
-    }
+    new_to_old = {item["new_symbol"]: old for old, item in candidates.items()}
     existing_old = defaultdict(set)
     source_rows = defaultdict(list)
 
+    # Keep memory bounded: cache only the five candidate source histories.
     with open(args.bars, newline="") as source:
         reader = csv.DictReader(source)
         fieldnames = reader.fieldnames
         if not fieldnames or "symbol" not in fieldnames or "timestamp" not in fieldnames:
             raise SystemExit("bars schema missing symbol or timestamp")
-        original_rows = []
         for row in reader:
             symbol = row["symbol"].strip().upper()
             day = row["timestamp"]
-            original_rows.append(row)
             if symbol in candidates:
                 existing_old[symbol].add(day)
             if symbol in new_to_old:
@@ -79,19 +76,22 @@ def main():
                 "added_rows": 0,
             })
             continue
-        copied = 0
+        clones = []
         for row in source_rows.get(new, []):
             day = row["timestamp"]
             if active(periods, old, day):
                 clone = dict(row)
                 clone["symbol"] = old
-                added.append(clone)
-                copied += 1
+                clones.append(clone)
         expected = int(item["expected_days"])
-        status = "materialized" if copied == expected and copied > 0 else "rejected_count_mismatch"
-        if status != "materialized":
-            added = [row for row in added if row["symbol"] != old]
-            copied = 0
+        status = (
+            "materialized"
+            if len(clones) == expected and len(clones) > 0
+            else "rejected_count_mismatch"
+        )
+        if status == "materialized":
+            added.extend(clones)
+        copied = len(clones) if status == "materialized" else 0
         results.append({
             "old_symbol": old,
             "new_symbol": new,
@@ -109,10 +109,13 @@ def main():
     if len(materialized) != len(candidates):
         raise SystemExit("not all validated aliases materialized exactly")
 
+    # Stream the full source file to the audit copy, then append validated rows.
     with open(args.out, "w", newline="") as target:
         writer = csv.DictWriter(target, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(original_rows)
+        with open(args.bars, newline="") as source:
+            for row in csv.DictReader(source):
+                writer.writerow(row)
         writer.writerows(added)
 
     provenance = {
