@@ -2,7 +2,8 @@
 
 The source bars are never modified. Only diagnostic-ready, same-issuer renames
 with no pre-existing old-symbol rows are copied, and only during the old
-symbol's [start, end) point-in-time membership interval.
+symbol's [start, end) point-in-time membership interval. Chained renames use
+the terminal validated symbol recorded by the diagnostic probe.
 """
 import argparse
 import csv
@@ -46,11 +47,14 @@ def main():
                 (row["start_date"], row["end_date"] or None)
             )
 
-    new_to_old = {item["new_symbol"]: old for old, item in candidates.items()}
+    source_symbols = {
+        item.get("resolved_symbol", item["new_symbol"])
+        for item in candidates.values()
+    }
     existing_old = defaultdict(set)
     source_rows = defaultdict(list)
 
-    # Keep memory bounded: cache only the five candidate source histories.
+    # Keep memory bounded: cache only validated terminal source histories.
     with open(args.bars, newline="") as source:
         reader = csv.DictReader(source)
         fieldnames = reader.fieldnames
@@ -61,23 +65,25 @@ def main():
             day = row["timestamp"]
             if symbol in candidates:
                 existing_old[symbol].add(day)
-            if symbol in new_to_old:
+            if symbol in source_symbols:
                 source_rows[symbol].append(row)
 
     added = []
     results = []
     for old, item in sorted(candidates.items()):
         new = item["new_symbol"]
+        resolved = item.get("resolved_symbol", new)
         if existing_old.get(old):
             results.append({
                 "old_symbol": old,
                 "new_symbol": new,
+                "resolved_symbol": resolved,
                 "status": "skipped_old_symbol_already_present",
                 "added_rows": 0,
             })
             continue
         clones = []
-        for row in source_rows.get(new, []):
+        for row in source_rows.get(resolved, []):
             day = row["timestamp"]
             if active(periods, old, day):
                 clone = dict(row)
@@ -95,13 +101,14 @@ def main():
         results.append({
             "old_symbol": old,
             "new_symbol": new,
+            "resolved_symbol": resolved,
             "status": status,
             "expected_rows": expected,
             "added_rows": copied,
         })
         print(
-            f"B27B_ALIAS_MATERIALIZE old={old} new={new} expected={expected} "
-            f"added={copied} status={status}",
+            f"B27B_ALIAS_MATERIALIZE old={old} new={new} resolved={resolved} "
+            f"expected={expected} added={copied} status={status}",
             flush=True,
         )
 
