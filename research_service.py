@@ -50,7 +50,29 @@ class H(BaseHTTPRequestHandler):
             allowed={"Former Tickers","Corporate Actions","Data Sources","Bottlenecks","JARVIS","VISION","ULTRON","EDITH","GATEKEEPER"}
             if agent not in allowed or not message:raise ValueError("invalid agent or message")
             room=memory_get("agent_chat_threads",{}) or {};thread=room.get(agent,[])
-            reply={"agent":agent,"time":time.time(),"user":message,"reply":"Message received. I will treat this as a research question within my assigned role. I cannot change gates, strategy, policy, authorize live trading, or approve my own evidence.","mode":"role_scoped_research_chat","authority":"proposal_only"}
+            discussion=memory_get("agent_deliberation_latest",{}) or {};history=memory_get("agent_discussion_history",[]) or []
+            relevant=[x for x in history if x.get("agent")==agent][-5:]
+            priorities=(discussion.get("priorities",[]) if isinstance(discussion,dict) else [])
+            q=message.lower()
+            if "how" in q and ("doing" in q or "going" in q):
+                if relevant:
+                    latest=relevant[-1];answer=latest.get("text","No current finding.")+" My latest evidence source is "+str(latest.get("evidence","unknown"))+"."
+                else: answer="I do not have a completed finding in the current research-room history yet."
+            elif "working" in q or "doing now" in q:
+                own=[x for x in priorities if (agent=="Former Tickers" and x.get("issue") in ("partial_history","former_identity")) or (agent=="Corporate Actions" and x.get("issue")=="corporate_action_disputes") or (agent=="Data Sources" and x.get("issue")=="provider_outages")]
+                answer=("My current research priority is "+own[0].get("position","")+".") if own else "I am waiting for a role-specific research task or new evidence."
+            elif "block" in q or "stopping" in q:
+                own=[x for x in priorities if x.get("count",0)>0]
+                answer=("The current blocker I can substantiate is "+own[0].get("issue","unknown").replace("_"," ")+", affecting "+str(own[0].get("count"))+" items.") if own else "I do not have a substantiated blocker recorded right now."
+            elif "disagree" in q or "challenge" in q:
+                challenges=[x for x in history if x.get("agent")==agent and x.get("kind")=="challenge"][-3:]
+                answer=challenges[-1].get("text") if challenges else "I do not have a recorded evidence-based disagreement right now."
+            elif "next" in q or "recommend" in q:
+                answer=("My evidence-backed next priority is: "+priorities[0].get("position","")+".") if priorities else "I do not have enough current evidence to recommend a research priority."
+            else:
+                context=" ".join(x.get("text","") for x in relevant[-2:])
+                answer=("From my current B27B record: "+context) if context else "I do not have enough role-specific evidence recorded to answer that yet."
+            reply={"agent":agent,"time":time.time(),"user":message,"reply":answer,"evidence_count":len(relevant),"mode":"evidence_grounded_role_chat","authority":"proposal_only"}
             thread.append(reply);room[agent]=thread[-100:];memory_put("agent_chat_threads",room)
             self.send_bytes(json.dumps(reply).encode(),"application/json")
         except Exception as e:
@@ -59,7 +81,7 @@ class H(BaseHTTPRequestHandler):
         route=self.path.split("?",1)[0].rstrip("/") or "/"
         if route=="/api/status":return self.send_bytes(json.dumps(snapshot()).encode(),"application/json")
         if route=="/api/research-room":
-            data={"discussion":memory_get("agent_deliberation_latest",{}),"room":memory_get("agent_research_room",{}),"chats":memory_get("agent_chat_threads",{})}
+            data={"discussion":memory_get("agent_deliberation_latest",{}),"history":memory_get("agent_discussion_history",[]),"room":memory_get("agent_research_room",{}),"chats":memory_get("agent_chat_threads",{})}
             return self.send_bytes(json.dumps(data).encode(),"application/json")
         if route in ("/","/command-center"):path=os.path.join(DASH,"index.html")
         elif route.startswith("/command-center/"):
