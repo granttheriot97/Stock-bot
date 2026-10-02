@@ -47,6 +47,14 @@ def alpha(symbol,start,end,key):
  with urllib.request.urlopen(req,timeout=12) as x: body=x.read().decode("utf-8","replace")
  return normalize(symbol,csv.DictReader(io.StringIO(body)),start,end)
 
+def nasdaq_wiki(symbol,start,end,key):
+ q=urllib.parse.urlencode({"ticker":symbol,"date.gte":start,"date.lte":end,"qopts.columns":"ticker,date,open,high,low,close,volume","api_key":key})
+ req=urllib.request.Request("https://data.nasdaq.com/api/v3/datatables/WIKI/PRICES.json?"+q,headers={"User-Agent":"B27B-research-repair/2.2"})
+ with urllib.request.urlopen(req,timeout=15) as x:data=json.loads(x.read().decode("utf-8","replace"))
+ dt=data.get("datatable",{});cols=[x.get("name") for x in dt.get("columns",[])]
+ records=[dict(zip(cols,row)) for row in dt.get("data",[])]
+ return normalize(symbol,records,start,end)
+
 def eodhd(symbol,start,end,key):
  q=urllib.parse.urlencode({"api_token":key,"fmt":"json","from":start,"to":end})
  req=urllib.request.Request(f"https://eodhd.com/api/eod/{urllib.parse.quote(symbol+'.US')}?"+q,headers={"User-Agent":"B27B-research-repair/2.1"})
@@ -72,7 +80,7 @@ def main():
    for item in report.get("results",[]):
     for rg in item.get("ranges",[]):partial_jobs.append((item["symbol"],rg["start"],rg["end"]))
   except Exception as exc:print("B27B_TARGETED_REPAIR_PARTIALS_ERROR "+type(exc).__name__,flush=True)
- alpha_key=os.getenv("ALPHAVANTAGE_API_KEY","").strip(); eod_key=os.getenv("EODHD_API_TOKEN","").strip()
+ alpha_key=os.getenv("ALPHAVANTAGE_API_KEY","").strip(); eod_key=os.getenv("EODHD_API_TOKEN","").strip(); wiki_key=os.getenv("NASDAQ_DATA_LINK_API_KEY","").strip()
  stooq_hosts=[]
  health_path="/tmp/b27b_provider_health.json"; cached=None
  try:
@@ -91,7 +99,7 @@ def main():
   print(f"B27B_SELF_REPAIR_CONTROL source={name} symbol=SPY rows={rows} status={'HEALTHY' if healthy else 'UNREACHABLE'} error={err or '-'} cache_hit={str(cache_hit).lower()}",flush=True)
  root_cause="primary Yahoo endpoint returns 404 for historical/delisted symbols"
  if not stooq_hosts:root_cause+="; public Stooq endpoints unreachable from runtime"
- print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":root_cause,"credentialed_fallbacks":{"alphavantage":bool(alpha_key),"eodhd":bool(eod_key)},"healthy_public_fallbacks":[name for name,_ in stooq_hosts],"memory_mode":"streaming_symbol_scan"},separators=(",",":")),flush=True)
+ print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":root_cause,"credentialed_fallbacks":{"alphavantage":bool(alpha_key),"eodhd":bool(eod_key),"nasdaq_wiki":bool(wiki_key)},"healthy_public_fallbacks":[name for name,_ in stooq_hosts],"memory_mode":"streaming_symbol_scan"},separators=(",",":")),flush=True)
  repaired={};used={};error_counts=defaultdict(int)
  provider_memory=memory_get("provider_symbol_failures",{}) or {}
  def one(sym):
@@ -99,6 +107,7 @@ def main():
   prior=provider_memory.get(sym,{}) if isinstance(provider_memory,dict) else {}
   if eod_key and int(prior.get("eodhd",0))<2: attempts.append(("eodhd",lambda:eodhd(sym,lo,hi,eod_key)))
   if alpha_key and int(prior.get("alphavantage",0))<2: attempts.append(("alphavantage",lambda:alpha(sym,lo,hi,alpha_key)))
+  if wiki_key and lo<="2018-04-11" and int(prior.get("nasdaq_wiki",0))<2: attempts.append(("nasdaq_wiki",lambda:nasdaq_wiki(sym,lo,min(hi,"2018-04-11"),wiki_key)))
   attempts += [(name,lambda host=host:stooq(sym,lo,hi,host)) for name,host in stooq_hosts if int(prior.get(name,0))<2]
   errs=[]
   for name,fn in attempts:
@@ -108,7 +117,7 @@ def main():
     errs.append(name+":empty")
    except Exception as e: errs.append(name+":"+type(e).__name__)
   return sym,None,[],errs,lo,hi
- bulk_enabled=bool(eod_key or alpha_key or stooq_hosts)
+ bulk_enabled=bool(eod_key or alpha_key or wiki_key or stooq_hosts)
  print(f"B27B_TARGETED_REPAIR jobs={len(partial_jobs)} symbols={len(set(x[0] for x in partial_jobs))} provider_ready={str(bulk_enabled).lower()}",flush=True)
  if bulk_enabled:
   with ThreadPoolExecutor(max_workers=12) as pool:
@@ -132,7 +141,7 @@ def main():
  attempted=len(missing) if bulk_enabled else 0
  print(f"B27B_SELF_REPAIR_RESULT requested={len(missing)} attempted={attempted} skipped={len(missing)-attempted} repaired_symbols={len(repaired)} present_before={len(existing)} present_after={present_after} errors={dict(error_counts)}",flush=True)
  if repaired: print("B27B_SELF_REPAIR_VALIDATED_SAMPLE "+",".join(f"{s}:{used[s]}:{len(repaired[s])}" for s in sorted(repaired)[:20]),flush=True)
- if not repaired and not alpha_key and not eod_key:
+ if not repaired and not alpha_key and not eod_key and not wiki_key:
   detail="public Stooq fallbacks unavailable from runtime" if not stooq_hosts else "public fallbacks returned no usable missing-symbol histories"
   print("B27B_SELF_REPAIR_BLOCKER no_credentialed_delisted_price_source_configured; "+detail,flush=True)
  rc=subprocess.run([sys.executable,"research/universe_audit.py","--bars",a.bars,"--start",a.start,"--end",a.end]).returncode
