@@ -1,7 +1,7 @@
 """Bounded self-repair for recoverable historical-data coverage failures.
 Data repair only: never changes policy, validation thresholds, permissions, strategy, or trading.
 """
-import argparse,csv,io,json,os,subprocess,sys,urllib.parse,urllib.request
+import argparse,csv,io,json,os,subprocess,sys,urllib.error,urllib.parse,urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor,as_completed
 
@@ -52,19 +52,36 @@ def eodhd(symbol,start,end,key):
  with urllib.request.urlopen(req,timeout=12) as x: data=json.loads(x.read().decode("utf-8","replace"))
  return normalize(symbol,data if isinstance(data,list) else [],start,end)
 
+def error_detail(exc):
+ if isinstance(exc,urllib.error.HTTPError): return type(exc).__name__+f":{exc.code}"
+ if isinstance(exc,urllib.error.URLError):
+  reason=getattr(exc,"reason",None)
+  if reason is not None:return type(exc).__name__+":"+type(reason).__name__
+ return type(exc).__name__
+
 def main():
  p=argparse.ArgumentParser();p.add_argument("--bars",required=True);p.add_argument("--membership",required=True);p.add_argument("--start",required=True);p.add_argument("--end",required=True);a=p.parse_args()
  periods=memberships(a.membership,a.end); existing=symbols_present(a.bars)
  historical={s for s,spans in periods.items() if any(st<=a.end and en>=a.start for st,en in spans)}
  missing=sorted(historical-existing)
  alpha_key=os.getenv("ALPHAVANTAGE_API_KEY","").strip(); eod_key=os.getenv("EODHD_API_TOKEN","").strip()
- print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":"primary Yahoo endpoint returns 404 for historical/delisted symbols; public Stooq endpoint unreachable from runtime","credentialed_fallbacks":{"alphavantage":bool(alpha_key),"eodhd":bool(eod_key)},"memory_mode":"streaming_symbol_scan"},separators=(",",":")),flush=True)
+ stooq_hosts=[]
+ for name,host in (("stooq-com","https://stooq.com/q/d/l/"),("stooq-pl","https://stooq.pl/q/d/l/")):
+  rows=0;err=None
+  try: rows=len(stooq("SPY",a.start,a.end,host))
+  except Exception as exc: err=error_detail(exc)
+  healthy=rows>=252 and err is None
+  if healthy:stooq_hosts.append((name,host))
+  print(f"B27B_SELF_REPAIR_CONTROL source={name} symbol=SPY rows={rows} status={'HEALTHY' if healthy else 'UNREACHABLE'} error={err or '-'}",flush=True)
+ root_cause="primary Yahoo endpoint returns 404 for historical/delisted symbols"
+ if not stooq_hosts:root_cause+="; public Stooq endpoints unreachable from runtime"
+ print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":root_cause,"credentialed_fallbacks":{"alphavantage":bool(alpha_key),"eodhd":bool(eod_key)},"healthy_public_fallbacks":[name for name,_ in stooq_hosts],"memory_mode":"streaming_symbol_scan"},separators=(",",":")),flush=True)
  repaired={};used={};error_counts=defaultdict(int)
  def one(sym):
   attempts=[]
   if eod_key: attempts.append(("eodhd",lambda:eodhd(sym,a.start,a.end,eod_key)))
   if alpha_key: attempts.append(("alphavantage",lambda:alpha(sym,a.start,a.end,alpha_key)))
-  attempts += [("stooq-com",lambda:stooq(sym,a.start,a.end,"https://stooq.com/q/d/l/")),("stooq-pl",lambda:stooq(sym,a.start,a.end,"https://stooq.pl/q/d/l/"))]
+  attempts += [(name,lambda host=host:stooq(sym,a.start,a.end,host)) for name,host in stooq_hosts]
   errs=[]
   for name,fn in attempts:
    try:
@@ -73,22 +90,26 @@ def main():
     errs.append(name+":empty")
    except Exception as e: errs.append(name+":"+type(e).__name__)
   return sym,None,[],errs
- with ThreadPoolExecutor(max_workers=12) as pool:
-  fs=[pool.submit(one,s) for s in missing]
-  for f in as_completed(fs):
-   sym,name,rows,errs=f.result()
-   for e in errs:error_counts[e]+=1
-   if rows: repaired[sym]=rows;used[sym]=name
+ bulk_enabled=bool(eod_key or alpha_key or stooq_hosts)
+ if bulk_enabled:
+  with ThreadPoolExecutor(max_workers=12) as pool:
+   fs=[pool.submit(one,s) for s in missing]
+   for f in as_completed(fs):
+    sym,name,rows,errs=f.result()
+    for e in errs:error_counts[e]+=1
+    if rows: repaired[sym]=rows;used[sym]=name
  if repaired:
   with open(a.bars,"a",newline="") as h:
    w=csv.writer(h)
    for sym in sorted(repaired):
     for row in repaired[sym]:w.writerow(row)
  present_after=len(existing|set(repaired))
- print(f"B27B_SELF_REPAIR_RESULT attempted={len(missing)} repaired_symbols={len(repaired)} present_before={len(existing)} present_after={present_after} errors={dict(error_counts)}",flush=True)
+ attempted=len(missing) if bulk_enabled else 0
+ print(f"B27B_SELF_REPAIR_RESULT requested={len(missing)} attempted={attempted} skipped={len(missing)-attempted} repaired_symbols={len(repaired)} present_before={len(existing)} present_after={present_after} errors={dict(error_counts)}",flush=True)
  if repaired: print("B27B_SELF_REPAIR_VALIDATED_SAMPLE "+",".join(f"{s}:{used[s]}:{len(repaired[s])}" for s in sorted(repaired)[:20]),flush=True)
  if not repaired and not alpha_key and not eod_key:
-  print("B27B_SELF_REPAIR_BLOCKER no_credentialed_delisted_price_source_configured; public Stooq fallback unavailable from runtime",flush=True)
+  detail="public Stooq fallbacks unavailable from runtime" if not stooq_hosts else "public fallbacks returned no usable missing-symbol histories"
+  print("B27B_SELF_REPAIR_BLOCKER no_credentialed_delisted_price_source_configured; "+detail,flush=True)
  rc=subprocess.run([sys.executable,"research/universe_audit.py","--bars",a.bars,"--start",a.start,"--end",a.end]).returncode
  print(f"B27B_SELF_REPAIR_AUDIT_RETRY returncode={rc}",flush=True)
  raise SystemExit(rc)
