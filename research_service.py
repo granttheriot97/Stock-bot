@@ -5,9 +5,11 @@ from research.persistent_memory import get as memory_get,put as memory_put
 S={"status":"starting","started_at":time.time(),"output":"","error":None,"checkpoint":None,"active_stage":None,"stage_started_at":None,"last_event":None,"event_count":0}
 ROOT=os.path.dirname(os.path.abspath(__file__));DASH=os.path.join(ROOT,"research_dashboard")
 def ingest(line,lines):
-    line=line.rstrip("\n");lines.append(line)
+    line=line.rstrip("
+");lines.append(line)
     if len(lines)>4000:del lines[:-4000]
-    S["output"]="\n".join(lines);S["last_event"]=line;S["event_count"]+=1
+    S["output"]="
+".join(lines);S["last_event"]=line;S["event_count"]+=1
     if line.startswith("B27B_STAGE_START stage="):
         S["active_stage"]=line.split("stage=",1)[1].split()[0];S["stage_started_at"]=time.time()
     elif line.startswith("B27B_STAGE_COMPLETE stage="):
@@ -43,7 +45,13 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200);self.send_header("Content-Type",ctype);self.send_header("Cache-Control","no-store, no-cache, must-revalidate");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
     def do_POST(self):
         route=self.path.split("?",1)[0].rstrip("/") or "/"
-        if route not in ("/api/agent-chat","/api/research-command"):self.send_error(404);return\n        if route=="/api/research-command":\n            try:\n                n=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(n) or b"{}");agent=str(body.get("agent","")).strip().upper();symbol=str(body.get("symbol","")).strip().upper();task=str(body.get("task","")).strip()[:500]\n                if agent not in {"ARCHIVIST","ORACLE","CIPHER","PULSE"} or not symbol or not task:raise ValueError("invalid command")\n                tasks=memory_get("agent_task_queue",[]) or [];item={"id":"human:"+str(int(time.time()*1000)),"symbol":symbol,"from":"HUMAN COMMAND","to":agent,"status":"OPEN","task":task,"created_at":time.time()};tasks.append(item);memory_put("agent_task_queue",tasks[-500:]);events=memory_get("research_events",[]) or [];events.append({"time":time.time(),"type":"TASK ASSIGNED","ticker":symbol,"text":agent+" assigned: "+task});memory_put("research_events",events[-500:]);return self.send_bytes(json.dumps(item).encode(),"application/json")\n            except Exception as e:self.send_response(400);self.end_headers();self.wfile.write(str(e).encode());return
+        if route not in ("/api/agent-chat","/api/research-command"):self.send_error(404);return
+        if route=="/api/research-command":
+            try:
+                n=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(n) or b"{}");agent=str(body.get("agent","")).strip().upper();symbol=str(body.get("symbol","")).strip().upper();task=str(body.get("task","")).strip()[:500]
+                if agent not in {"ARCHIVIST","ORACLE","CIPHER","PULSE"} or not symbol or not task:raise ValueError("invalid command")
+                tasks=memory_get("agent_task_queue",[]) or [];item={"id":"human:"+str(int(time.time()*1000)),"symbol":symbol,"from":"HUMAN COMMAND","to":agent,"status":"OPEN","task":task,"created_at":time.time()};tasks.append(item);memory_put("agent_task_queue",tasks[-500:]);events=memory_get("research_events",[]) or [];events.append({"time":time.time(),"type":"TASK ASSIGNED","ticker":symbol,"text":agent+" assigned: "+task});memory_put("research_events",events[-500:]);return self.send_bytes(json.dumps(item).encode(),"application/json")
+            except Exception as e:self.send_response(400);self.end_headers();self.wfile.write(str(e).encode());return
         try:
             n=int(self.headers.get("Content-Length","0"));body=json.loads(self.rfile.read(n) or b"{}")
             agent=str(body.get("agent","")).strip();message=str(body.get("message","")).strip()[:2000]
@@ -51,7 +59,7 @@ class H(BaseHTTPRequestHandler):
             if agent not in allowed or not message:raise ValueError("invalid agent or message")
             room=memory_get("agent_chat_threads",{}) or {};thread=room.get(agent,[])
             discussion=memory_get("agent_deliberation_latest",{}) or {};history=memory_get("agent_discussion_history",[]) or []
-            relevant=[x for x in history if x.get("agent")==agent][-5:]
+            display={"Former Tickers":"ARCHIVIST","Corporate Actions":"ORACLE","Data Sources":"CIPHER","Bottlenecks":"PULSE"}.get(agent,agent)\n            relevant=[x for x in history if x.get("agent") in (agent,display)][-5:]
             priorities=(discussion.get("priorities",[]) if isinstance(discussion,dict) else [])
             q=message.lower()
             if "how" in q and ("doing" in q or "going" in q):
@@ -65,7 +73,7 @@ class H(BaseHTTPRequestHandler):
                 own=[x for x in priorities if x.get("count",0)>0]
                 answer=("The current blocker I can substantiate is "+own[0].get("issue","unknown").replace("_"," ")+", affecting "+str(own[0].get("count"))+" items.") if own else "I do not have a substantiated blocker recorded right now."
             elif "disagree" in q or "challenge" in q:
-                challenges=[x for x in history if x.get("agent")==agent and x.get("kind")=="challenge"][-3:]
+                challenges=[x for x in history if x.get("agent") in (agent,display) and x.get("kind")=="challenge"][-3:]
                 answer=challenges[-1].get("text") if challenges else "I do not have a recorded evidence-based disagreement right now."
             elif "next" in q or "recommend" in q:
                 answer=("My evidence-backed next priority is: "+priorities[0].get("position","")+".") if priorities else "I do not have enough current evidence to recommend a research priority."
