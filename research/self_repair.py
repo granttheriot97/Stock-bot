@@ -61,10 +61,10 @@ def error_detail(exc):
  return type(exc).__name__
 
 def main():
- p=argparse.ArgumentParser();p.add_argument("--bars",required=True);p.add_argument("--membership",required=True);p.add_argument("--start",required=True);p.add_argument("--end",required=True);a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument("--bars",required=True);p.add_argument("--membership",required=True);p.add_argument("--start",required=True);p.add_argument("--end",required=True);p.add_argument("--partials");a=p.parse_args()
  periods=memberships(a.membership,a.end); existing=symbols_present(a.bars)
  historical={s for s,spans in periods.items() if any(st<=a.end and en>=a.start for st,en in spans)}
- missing=sorted(historical-existing)
+ missing=sorted(historical-existing)\n partial_jobs=[]\n if a.partials:\n  try:\n   report=json.load(open(a.partials))\n   for item in report.get("results",[]):\n    for rg in item.get("ranges",[]):partial_jobs.append((item["symbol"],rg["start"],rg["end"]))\n  except Exception as exc:print("B27B_TARGETED_REPAIR_PARTIALS_ERROR "+type(exc).__name__,flush=True)
  alpha_key=os.getenv("ALPHAVANTAGE_API_KEY","").strip(); eod_key=os.getenv("EODHD_API_TOKEN","").strip()
  stooq_hosts=[]
  health_path="/tmp/b27b_provider_health.json"; cached=None
@@ -90,18 +90,18 @@ def main():
  def one(sym):
   attempts=[]
   prior=provider_memory.get(sym,{}) if isinstance(provider_memory,dict) else {}
-  if eod_key and int(prior.get("eodhd",0))<2: attempts.append(("eodhd",lambda:eodhd(sym,a.start,a.end,eod_key)))
-  if alpha_key and int(prior.get("alphavantage",0))<2: attempts.append(("alphavantage",lambda:alpha(sym,a.start,a.end,alpha_key)))
-  attempts += [(name,lambda host=host:stooq(sym,a.start,a.end,host)) for name,host in stooq_hosts if int(prior.get(name,0))<2]
+  if eod_key and int(prior.get("eodhd",0))<2: attempts.append(("eodhd",lambda:eodhd(sym,lo,hi,eod_key)))
+  if alpha_key and int(prior.get("alphavantage",0))<2: attempts.append(("alphavantage",lambda:alpha(sym,lo,hi,alpha_key)))
+  attempts += [(name,lambda host=host:stooq(sym,lo,hi,host)) for name,host in stooq_hosts if int(prior.get(name,0))<2]
   errs=[]
   for name,fn in attempts:
    try:
     rows=fn()
-    if rows:return sym,name,rows,errs
+    if rows:return sym,name,rows,errs,lo,hi
     errs.append(name+":empty")
    except Exception as e: errs.append(name+":"+type(e).__name__)
-  return sym,None,[],errs
- bulk_enabled=bool(eod_key or alpha_key or stooq_hosts)
+  return sym,None,[],errs,lo,hi
+ bulk_enabled=bool(eod_key or alpha_key or stooq_hosts)\n print(f"B27B_TARGETED_REPAIR jobs={len(partial_jobs)} symbols={len(set(x[0] for x in partial_jobs))} provider_ready={str(bulk_enabled).lower()}",flush=True)
  if bulk_enabled:
   with ThreadPoolExecutor(max_workers=12) as pool:
    fs=[pool.submit(one,s) for s in missing]
@@ -112,7 +112,7 @@ def main():
      provider=e.split(':',1)[0]
      provider_memory.setdefault(sym,{})[provider]=int(provider_memory.setdefault(sym,{}).get(provider,0))+1
     if rows:
-     repaired[sym]=rows;used[sym]=name
+     repaired.setdefault(sym,[]).extend(rows);used[sym]=name
      provider_memory.pop(sym,None)
  if repaired:
   with open(a.bars,"a",newline="") as h:
