@@ -4,6 +4,7 @@ Data repair only: never changes policy, validation thresholds, permissions, stra
 import argparse,csv,io,json,os,subprocess,sys,time,urllib.error,urllib.parse,urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor,as_completed
+from persistent_memory import get as memory_get,put as memory_put
 
 def memberships(path,end):
  d=defaultdict(list)
@@ -85,11 +86,13 @@ def main():
  if not stooq_hosts:root_cause+="; public Stooq endpoints unreachable from runtime"
  print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":root_cause,"credentialed_fallbacks":{"alphavantage":bool(alpha_key),"eodhd":bool(eod_key)},"healthy_public_fallbacks":[name for name,_ in stooq_hosts],"memory_mode":"streaming_symbol_scan"},separators=(",",":")),flush=True)
  repaired={};used={};error_counts=defaultdict(int)
+ provider_memory=memory_get("provider_symbol_failures",{}) or {}
  def one(sym):
   attempts=[]
-  if eod_key: attempts.append(("eodhd",lambda:eodhd(sym,a.start,a.end,eod_key)))
-  if alpha_key: attempts.append(("alphavantage",lambda:alpha(sym,a.start,a.end,alpha_key)))
-  attempts += [(name,lambda host=host:stooq(sym,a.start,a.end,host)) for name,host in stooq_hosts]
+  prior=provider_memory.get(sym,{}) if isinstance(provider_memory,dict) else {}
+  if eod_key and int(prior.get("eodhd",0))<2: attempts.append(("eodhd",lambda:eodhd(sym,a.start,a.end,eod_key)))
+  if alpha_key and int(prior.get("alphavantage",0))<2: attempts.append(("alphavantage",lambda:alpha(sym,a.start,a.end,alpha_key)))
+  attempts += [(name,lambda host=host:stooq(sym,a.start,a.end,host)) for name,host in stooq_hosts if int(prior.get(name,0))<2]
   errs=[]
   for name,fn in attempts:
    try:
@@ -104,13 +107,19 @@ def main():
    fs=[pool.submit(one,s) for s in missing]
    for f in as_completed(fs):
     sym,name,rows,errs=f.result()
-    for e in errs:error_counts[e]+=1
-    if rows: repaired[sym]=rows;used[sym]=name
+    for e in errs:
+     error_counts[e]+=1
+     provider=e.split(':',1)[0]
+     provider_memory.setdefault(sym,{})[provider]=int(provider_memory.setdefault(sym,{}).get(provider,0))+1
+    if rows:
+     repaired[sym]=rows;used[sym]=name
+     provider_memory.pop(sym,None)
  if repaired:
   with open(a.bars,"a",newline="") as h:
    w=csv.writer(h)
    for sym in sorted(repaired):
     for row in repaired[sym]:w.writerow(row)
+ memory_put("provider_symbol_failures",provider_memory)
  present_after=len(existing|set(repaired))
  attempted=len(missing) if bulk_enabled else 0
  print(f"B27B_SELF_REPAIR_RESULT requested={len(missing)} attempted={attempted} skipped={len(missing)-attempted} repaired_symbols={len(repaired)} present_before={len(existing)} present_after={present_after} errors={dict(error_counts)}",flush=True)
