@@ -34,7 +34,7 @@ def stage(name,cmd,inputs=(),outputs=(),extra="",retries=1,timeout=None,deps=())
     timeout=timeout or int(os.getenv("B27B_STAGE_TIMEOUT","900"))
     for attempt in range(1,retries+2):
         started=time.time()
-        state=load();state["stages"][name]={"status":"started","fingerprint":sig,"attempt":attempt,"time":started};save(state)
+        state=load();state["stages"][name]={"status":"started","fingerprint":sig,"attempt":attempt,"time":started,"started_at":started};save(state)
         print(f"B27B_STAGE_START stage={name} attempt={attempt} timeout={timeout}",flush=True)
         timed_out=False
         with tempfile.TemporaryFile(mode="w+t") as log:
@@ -52,12 +52,12 @@ def stage(name,cmd,inputs=(),outputs=(),extra="",retries=1,timeout=None,deps=())
             returncode=124
             print(f"B27B_STAGE_TIMEOUT stage={name} attempt={attempt} seconds={timeout}",flush=True)
         if returncode==0 and all(os.path.exists(x) for x in outputs):
-            state=load();state["stages"][name]={"status":"complete","fingerprint":sig,"attempt":attempt,"time":time.time()};save(state)
+            finished=time.time();state=load();state["stages"][name]={"status":"complete","fingerprint":sig,"attempt":attempt,"time":finished,"started_at":started,"duration_s":round(finished-started,3)};save(state)
             optimizer_record(name,sig,"complete",started,{"attempt":attempt})
             print(f"B27B_STAGE_COMPLETE stage={name}",flush=True);return
         print(f"B27B_WATCHDOG_RETRY stage={name} attempt={attempt} returncode={returncode}",flush=True)
         if attempt<=retries:time.sleep(min(2**attempt,8))
-    state=load();state["stages"][name]={"status":"failed","fingerprint":sig,"attempt":attempt,"time":time.time()};save(state)
+    finished=time.time();state=load();state["stages"][name]={"status":"failed","fingerprint":sig,"attempt":attempt,"time":finished,"started_at":started,"duration_s":round(finished-started,3)};save(state)
     optimizer_record(name,sig,"failed",started,{"attempt":attempt})
     raise SystemExit(f"stage failed: {name}")
 def main():
