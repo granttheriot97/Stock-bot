@@ -1,7 +1,7 @@
 """Free Render-compatible B27B research service with streaming research logs and read-only command center."""
 import json,os,subprocess,threading,time,mimetypes
 from http.server import BaseHTTPRequestHandler,HTTPServer
-S={"status":"starting","started_at":time.time(),"output":"","error":None,"checkpoint":None}
+S={"status":"starting","started_at":time.time(),"output":"","error":None,"checkpoint":None,"active_stage":None,"stage_started_at":None,"last_event":None}
 ROOT=os.path.dirname(os.path.abspath(__file__))
 DASH=os.path.join(ROOT,"research_dashboard")
 def run():
@@ -12,7 +12,7 @@ def run():
         while True:
             line=p.stdout.readline()
             if line:
-                line=line.rstrip("\n");lines.append(line)
+                line=line.rstrip("\n");lines.append(line)\n                S["last_event"]=line\n                if line.startswith("B27B_STAGE_START stage="):\n                    S["active_stage"]=line.split("stage=",1)[1].split()[0];S["stage_started_at"]=time.time()\n                elif line.startswith("B27B_STAGE_COMPLETE stage="):\n                    finished=line.split("stage=",1)[1].split()[0]\n                    if S.get("active_stage")==finished:S["active_stage"]=None;S["stage_started_at"]=None
                 if len(lines)>4000:lines=lines[-4000:]
                 S["output"]="\n".join(lines);print(line,flush=True)
             if p.poll() is not None:
