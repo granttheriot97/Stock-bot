@@ -57,7 +57,7 @@ def main():
     stage("watchdog_pre_experiments","python research/agents/watchdog.py",[MAN],[],years+"|"+cost,0)
     stage("vision_multi_strategy",f'B27B_COST_BPS="{cost}" python research/agents/vision.py multi_strategy {bars}',[bars,"research/agents/vision.py"],[],cost,0)
     stage("vision_cross_sectional",f'B27B_COST_BPS="{cost}" B27B_FREEZE_DATE="{as_of}" python research/agents/vision.py cross_sectional {bars}',[bars,mem,"research/agents/vision.py"],[],cost+"|"+as_of,0)
-    stage("ultron_plan","python research/agents/ultron.py",["research/agents/ultron.py"],["/tmp/b27b_ultron_plan.json"],cost,0)
+    stage("ultron_adversarial",f'B27B_COST_BPS="{cost}" B27B_FREEZE_DATE="{as_of}" python research/agents/ultron.py {bars}',[bars,"research/agents/ultron.py","research/cross_sectional.py"],["/tmp/b27b_ultron_report.json"],cost+"|"+as_of,0)
     stage("edith_record","python research/agents/edith.py pipeline_research_complete",[bars,"research/agents/edith.py"],["/tmp/b27b_edith.jsonl"],cost+"|"+as_of,0)
     stage("gatekeeper","python research/agents/gatekeeper.py /tmp/b27b_gatekeeper_evidence.json",["research/agents/gatekeeper.py"],[],cost+"|"+as_of,0)
     print("B27B_PIPELINE_COMPLETE",flush=True)
