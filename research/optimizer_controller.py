@@ -37,7 +37,10 @@ def should_run(name,fingerprint,deps=(),cooldown=1800):
     rec=tasks.get(key(name,fingerprint))
     if not rec:return True,"new"
     if rec.get("status")=="complete":return False,"deduplicated"
-    if rec.get("status")=="failed" and time.time()-rec.get("ended",0)<cooldown:return False,"failure_cooldown"
+    if rec.get("status")=="failed" and time.time()-rec.get("ended",0)<cooldown:
+        meta=rec.get("meta") or {}
+        if name=="preflight" and meta.get("source_fingerprint")!=fingerprint:return True,"source_changed_after_preflight_failure"
+        return False,"failure_cooldown"
     return True,"retry"
 
 def record(name,fingerprint,status,started,meta=None):
@@ -45,7 +48,7 @@ def record(name,fingerprint,status,started,meta=None):
     prev=s["tasks"].get(k,{})
     rec={"name":name,"fingerprint":fingerprint,"status":status,"started":started,"ended":now,
          "duration_seconds":round(now-started,3),"attempts":int(prev.get("attempts",0))+1,
-         "meta":meta or {}}
+         "meta":dict(meta or {},source_fingerprint=fingerprint)}
     s["tasks"][k]=rec;s["events"]=(s.get("events",[])+[rec])[-1000:];_save(s);return rec
 
 def rank(items):
