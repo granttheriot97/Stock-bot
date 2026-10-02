@@ -58,6 +58,7 @@ def main():
     start=(date.fromisoformat(as_of)-timedelta(days=int(float(years)*365.25))).isoformat()
     mem="research/data/sp500_ticker_start_end.csv"
     bars="/tmp/b27b_bars.csv"
+    alias_bars="/tmp/b27b_bars_alias_audit.csv"
     stage("agent_security","python research/agents/security_test.py",["research/agents/agent_policy.json","research/agents/supervisor.py"],[],years+"|"+cost,0)
     stage("agent_supervisor","python research/agents/supervisor.py",["research/agents/agent_policy.json","research/agents/supervisor.py"],[],years+"|"+cost,0)
     stage("membership_boundary_tests","python research/tests/test_membership_boundaries.py",[mem,"research/data/validated_ticker_renames.csv","research/cross_sectional.py","research/tests/test_membership_boundaries.py"],[],as_of,0)
@@ -65,7 +66,8 @@ def main():
     stage("fetch_agent",f'B27B_YEARS="{years}" B27B_AS_OF_DATE="{as_of}" B27B_BARS="{bars}" python research/agents/fetch_agent.py',[mem,"research/agents/fetch_agent.py"],[bars],"full_membership|"+years+"|"+as_of,2)
     stage("secondary_source_probe",f'python research/secondary_source_probe.py --bars {bars} --membership {mem} --start "{start}" --end "{as_of}"',[mem,bars,"research/secondary_source_probe.py"],[],years+"|"+start+"|"+as_of,0)
     stage("ticker_rename_probe",f'python research/ticker_rename_probe.py --bars {bars} --membership {mem} --aliases research/data/validated_ticker_renames.csv --start "{start}" --end "{as_of}" --out /tmp/b27b_ticker_rename_report.json',[mem,bars,"research/data/validated_ticker_renames.csv","research/ticker_rename_probe.py"],["/tmp/b27b_ticker_rename_report.json"],years+"|"+start+"|"+as_of,0)
-    stage("universe_audit",f'python research/self_repair.py --bars {bars} --membership {mem} --start "{start}" --end "{as_of}"',[mem,bars,"research/self_repair.py","research/universe_audit.py"],[],years+"|"+start+"|"+as_of,0)
+    stage("alias_audit_materialization",f'python research/materialize_ticker_renames.py --bars {bars} --membership {mem} --report /tmp/b27b_ticker_rename_report.json --out {alias_bars} --provenance /tmp/b27b_alias_materialization.json',[bars,mem,"/tmp/b27b_ticker_rename_report.json","research/materialize_ticker_renames.py"],[alias_bars,"/tmp/b27b_alias_materialization.json"],years+"|"+start+"|"+as_of,0)
+    stage("universe_audit",f'python research/self_repair.py --bars {alias_bars} --membership {mem} --start "{start}" --end "{as_of}"',[mem,alias_bars,"research/self_repair.py","research/universe_audit.py"],[],years+"|"+start+"|"+as_of,0)
     stage("jarvis_security_tests","python research/tests/test_jarvis_security.py",["research/jarvis.py","research/jarvis_policy.json","research/jarvis_supervisor.py"],[],years+"|"+cost,0)
     stage("jarvis_supervisor","python research/jarvis_supervisor.py",["research/jarvis.py","research/jarvis_policy.json","research/jarvis_supervisor.py"],[],years+"|"+cost,0)
     stage("jarvis_audit_log_start","python research/jarvis_audit_log.py start",["research/jarvis.py","research/jarvis_policy.json"],[],years+"|"+cost,0)
