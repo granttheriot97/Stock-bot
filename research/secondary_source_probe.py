@@ -27,6 +27,16 @@ def probe(symbol,start,end):
     ]
     return len(rows)
 
+def error_detail(exc):
+    detail=type(exc).__name__
+    if isinstance(exc,urllib.error.HTTPError):
+        return detail+f":{exc.code}"
+    if isinstance(exc,urllib.error.URLError):
+        reason=getattr(exc,"reason",None)
+        if reason is not None:
+            return detail+":"+type(reason).__name__
+    return detail
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--bars",required=True)
@@ -49,22 +59,36 @@ def main():
     missing=sorted(historical-present)
     available={}
     errors={}
-    with ThreadPoolExecutor(max_workers=12) as pool:
-        futures={pool.submit(probe,symbol,a.start,a.end):symbol for symbol in missing}
-        for future in as_completed(futures):
-            symbol=futures[future]
-            try:
-                rows=future.result()
-                if rows:
-                    available[symbol]=rows
-            except Exception as exc:
-                detail=type(exc).__name__
-                if isinstance(exc,urllib.error.HTTPError):
-                    detail+=f":{exc.code}"
-                errors[symbol]=detail
+    control_rows=0
+    control_error=None
+    try:
+        control_rows=probe("SPY",a.start,a.end)
+    except Exception as exc:
+        control_error=error_detail(exc)
+    control_ok=control_rows>=252 and control_error is None
+    print(
+        f"B27B_SECONDARY_CONTROL source=stooq symbol=SPY rows={control_rows} "
+        f"status={'HEALTHY' if control_ok else 'UNREACHABLE'} "
+        f"error={control_error or '-'}",
+        flush=True,
+    )
+    attempted=0
+    if control_ok:
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            futures={pool.submit(probe,symbol,a.start,a.end):symbol for symbol in missing}
+            attempted=len(futures)
+            for future in as_completed(futures):
+                symbol=futures[future]
+                try:
+                    rows=future.result()
+                    if rows:
+                        available[symbol]=rows
+                except Exception as exc:
+                    errors[symbol]=error_detail(exc)
     momentum_ready={symbol:rows for symbol,rows in available.items() if rows>=252}
     print(
         f"B27B_SECONDARY_PROBE source=stooq diagnostic_only=true requested={len(missing)} "
+        f"attempted={attempted} skipped={len(missing)-attempted} "
         f"available={len(available)} momentum_ready={len(momentum_ready)} errors={len(errors)} "
         f"available_rate={(len(available)/len(missing) if missing else 0):.4f}",
         flush=True,
@@ -85,7 +109,8 @@ def main():
         (",".join(f"{symbol}:{errors[symbol]}" for symbol in sorted(errors)[:20]) or "-"),
         flush=True,
     )
-    print("B27B_SECONDARY_STATUS NOT_INTEGRATED",flush=True)
+    status="NOT_INTEGRATED" if control_ok else "PROVIDER_UNREACHABLE_NOT_INTEGRATED"
+    print("B27B_SECONDARY_STATUS "+status,flush=True)
 
 if __name__=="__main__":
     main()
