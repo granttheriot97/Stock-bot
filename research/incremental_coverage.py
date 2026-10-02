@@ -1,5 +1,5 @@
 """Incremental Phase-1 coverage scorer. Diagnostic only; fixed gates remain in universe_audit."""
-import argparse,csv
+import argparse,csv,time\nfrom persistent_memory import get as memory_get,put as memory_put
 from collections import defaultdict
 MIN=0.90
 def main():
