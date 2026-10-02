@@ -26,24 +26,24 @@ def main():
     if "SPY" not in bars:
         raise SystemExit("SPY is required for the trading-calendar audit")
     calendar=sorted(date for date in bars["SPY"] if a.start<=date<=a.end)
-    periods=defaultdict(list)
+    # Membership intervals are [start, end): replacement tickers become active on the effective date.\n    periods=defaultdict(list)
     for row in rows:
         ticker=row["ticker"].strip().upper()
-        periods[ticker].append((row["start_date"],row["end_date"] or a.end))
+        periods[ticker].append((row["start_date"],row["end_date"] or None))
     historical={
         ticker for ticker,spans in periods.items()
-        if any(start<=a.end and end>=a.start for start,end in spans)
+        if any(start<=a.end and (end is None or end>a.start) for start,end in spans)
     }
     former={
         row["ticker"].strip().upper() for row in rows
-        if row["end_date"] and a.start<=row["end_date"]<=a.end
+        if row["end_date"] and a.start<row["end_date"]<=a.end
     }
     completeness={}
     expected_counts={}
     for ticker in historical:
         expected={
             date for date in calendar
-            if any(max(start,a.start)<=date<=min(end,a.end) for start,end in periods[ticker])
+            if any(start<=date and (end is None or date<end) for start,end in periods[ticker])
         }
         expected_counts[ticker]=len(expected)
         completeness[ticker]=(len(bars.get(ticker,set()) & expected)/len(expected)) if expected else 0.0
