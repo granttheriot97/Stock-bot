@@ -38,7 +38,7 @@ def stage(name,cmd,inputs=(),outputs=(),extra="",retries=1):
 def main():
     years=os.getenv("B27B_YEARS","10")
     cost=os.getenv("B27B_COST_BPS","15")
-    as_of=os.getenv("B27B_AS_OF","2026-10-01")
+    as_of=os.getenv("B27B_AS_OF_DATE","2026-10-01")
     mem="research/data/sp500_ticker_start_end.csv"
     bars="/tmp/b27b_bars.csv"
     stage("former_probe","python research/former_data_probe.py",[mem],[],years,1)
@@ -51,8 +51,8 @@ def main():
     stage("jarvis_audit_log_start","python research/jarvis_audit_log.py start",["research/jarvis.py","research/jarvis_policy.json"],[],years+"|"+cost,0)
     stage("jarvis_audit",f"python research/jarvis.py {bars}",[bars,"research/fetch_market_data.py","research/cross_sectional.py","research/jarvis.py","research/jarvis_policy.json"],["/tmp/b27b_jarvis_report.json"],years+"|"+cost,0)
     stage("jarvis_audit_log_complete","python research/jarvis_audit_log.py complete",["/tmp/b27b_jarvis_report.json"],[],years+"|"+cost,0)
-    stage("multi_strategy",f"python research/multi_strategy.py {bars}",[bars],[],cost,0)
-    stage("cross_sectional",f"B27B_SKIP_RESAMPLING=1 python research/cross_sectional.py {bars}",[bars,mem],[],cost,0)
+    stage("multi_strategy",f'B27B_COST_BPS="{cost}" python research/multi_strategy.py {bars}',[bars],[],cost,0)
+    stage("cross_sectional",f'B27B_COST_BPS="{cost}" B27B_FREEZE_DATE="{as_of}" B27B_SKIP_RESAMPLING=1 python research/cross_sectional.py {bars}',[bars,mem],[],cost,0)
     print("B27B_PIPELINE_COMPLETE",flush=True)
 if __name__=="__main__":
     main()
