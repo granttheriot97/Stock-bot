@@ -1,54 +1,92 @@
 """Bounded self-repair for recoverable historical-data coverage failures.
-Repairs data only; it cannot alter policy, gates, strategy, permissions, or trading.
+Data repair only: never changes policy, validation thresholds, permissions, strategy, or trading.
 """
-import argparse,csv,io,json,subprocess,sys,urllib.parse,urllib.request
+import argparse,csv,io,json,os,subprocess,sys,urllib.parse,urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor,as_completed
-SOURCES=(("stooq-com","https://stooq.com/q/d/l/"),("stooq-pl","https://stooq.pl/q/d/l/"))
+
 def memberships(path,end):
  d=defaultdict(list)
  with open(path,newline="") as h:
   for r in csv.DictReader(h): d[r["ticker"].strip().upper()].append((r["start_date"],r["end_date"] or end))
  return d
-def present(path):
- with open(path,newline="") as h:return {r["symbol"].strip().upper() for r in csv.DictReader(h)}
-def valid(r,start,end):
+
+def rows_by_symbol(path):
+ d=defaultdict(list)
+ with open(path,newline="") as h:
+  for r in csv.DictReader(h): d[r["symbol"].strip().upper()].append(r)
+ return d
+
+def valid_values(date,o,hi,lo,c,v,start,end):
  try:
-  o,hi,lo,c,v=map(float,(r["Open"],r["High"],r["Low"],r["Close"],r["Volume"]))
-  return start<=r["Date"]<=end and min(o,hi,lo,c)>0 and v>=0 and hi>=max(o,c,lo) and lo<=min(o,c,hi)
+  o,hi,lo,c,v=map(float,(o,hi,lo,c,v))
+  return start<=date<=end and min(o,hi,lo,c)>0 and v>=0 and hi>=max(o,c,lo) and lo<=min(o,c,hi)
  except Exception:return False
-def fetch(base,symbol,start,end):
+
+def normalize(symbol,records,start,end):
+ out=[]
+ for r in records:
+  date=r.get("date") or r.get("Date")
+  o=r.get("open") or r.get("Open"); hi=r.get("high") or r.get("High")
+  lo=r.get("low") or r.get("Low"); c=r.get("close") or r.get("Close"); v=r.get("volume") or r.get("Volume")
+  if date and valid_values(date,o,hi,lo,c,v,start,end): out.append([date,symbol,o,hi,lo,c,v])
+ return out
+
+def stooq(symbol,start,end,host):
  q=urllib.parse.urlencode({"s":symbol.lower()+".us","d1":start.replace("-",""),"d2":end.replace("-",""),"i":"d"})
- req=urllib.request.Request(base+"?"+q,headers={"User-Agent":"Mozilla/5.0 B27B-research-repair/1.0"})
- with urllib.request.urlopen(req,timeout=15) as x: body=x.read().decode("utf-8","replace")
- rows=[r for r in csv.DictReader(io.StringIO(body)) if valid(r,start,end)]
- return [[r["Date"],symbol,r["Open"],r["High"],r["Low"],r["Close"],r["Volume"]] for r in rows]
+ req=urllib.request.Request(host+"?"+q,headers={"User-Agent":"Mozilla/5.0 B27B-research-repair/2.0"})
+ with urllib.request.urlopen(req,timeout=4) as x: body=x.read().decode("utf-8","replace")
+ return normalize(symbol,list(csv.DictReader(io.StringIO(body))),start,end)
+
+def alpha(symbol,start,end,key):
+ q=urllib.parse.urlencode({"function":"TIME_SERIES_DAILY","symbol":symbol,"outputsize":"full","datatype":"csv","apikey":key})
+ req=urllib.request.Request("https://www.alphavantage.co/query?"+q,headers={"User-Agent":"B27B-research-repair/2.0"})
+ with urllib.request.urlopen(req,timeout=12) as x: body=x.read().decode("utf-8","replace")
+ return normalize(symbol,list(csv.DictReader(io.StringIO(body))),start,end)
+
+def eodhd(symbol,start,end,key):
+ q=urllib.parse.urlencode({"api_token":key,"fmt":"json","from":start,"to":end})
+ req=urllib.request.Request(f"https://eodhd.com/api/eod/{urllib.parse.quote(symbol+'.US')}?"+q,headers={"User-Agent":"B27B-research-repair/2.0"})
+ with urllib.request.urlopen(req,timeout=12) as x: data=json.loads(x.read().decode("utf-8","replace"))
+ return normalize(symbol,data if isinstance(data,list) else [],start,end)
+
 def main():
  p=argparse.ArgumentParser();p.add_argument("--bars",required=True);p.add_argument("--membership",required=True);p.add_argument("--start",required=True);p.add_argument("--end",required=True);a=p.parse_args()
- before=present(a.bars); periods=memberships(a.membership,a.end)
+ periods=memberships(a.membership,a.end); existing=rows_by_symbol(a.bars)
  historical={s for s,spans in periods.items() if any(st<=a.end and en>=a.start for st,en in spans)}
- missing=sorted(historical-before)
- print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":"primary source unavailable for historical/delisted symbols; validated fallback required"},separators=(",",":")),flush=True)
- repaired={};used={};errors=defaultdict(int)
+ # Repair wholly missing symbols first. The unchanged audit remains authoritative for incomplete symbols.
+ missing=sorted(historical-set(existing))
+ alpha_key=os.getenv("ALPHAVANTAGE_API_KEY","").strip(); eod_key=os.getenv("EODHD_API_TOKEN","").strip()
+ print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":"primary Yahoo endpoint returns 404 for historical/delisted symbols; Stooq endpoint is unreachable from current runtime","credentialed_fallbacks":{"alphavantage":bool(alpha_key),"eodhd":bool(eod_key)}},separators=(",",":")),flush=True)
+ repaired={};used={};error_counts=defaultdict(int)
  def one(sym):
-  for name,base in SOURCES:
+  attempts=[]
+  if eod_key: attempts.append(("eodhd",lambda:eodhd(sym,a.start,a.end,eod_key)))
+  if alpha_key: attempts.append(("alphavantage",lambda:alpha(sym,a.start,a.end,alpha_key)))
+  attempts += [("stooq-com",lambda:stooq(sym,a.start,a.end,"https://stooq.com/q/d/l/")),("stooq-pl",lambda:stooq(sym,a.start,a.end,"https://stooq.pl/q/d/l/"))]
+  errs=[]
+  for name,fn in attempts:
    try:
-    rows=fetch(base,sym,a.start,a.end)
-    if rows:return sym,name,rows
-   except Exception as e:errors[type(e).__name__]+=1
-  return sym,None,[]
- with ThreadPoolExecutor(max_workers=8) as pool:
+    rows=fn()
+    if rows:return sym,name,rows,errs
+    errs.append(name+":empty")
+   except Exception as e: errs.append(name+":"+type(e).__name__)
+  return sym,None,[],errs
+ with ThreadPoolExecutor(max_workers=12) as pool:
   fs=[pool.submit(one,s) for s in missing]
   for f in as_completed(fs):
-   sym,name,rows=f.result()
-   if rows:repaired[sym]=rows;used[sym]=name
+   sym,name,rows,errs=f.result()
+   for e in errs:error_counts[e]+=1
+   if rows: repaired[sym]=rows;used[sym]=name
  if repaired:
   with open(a.bars,"a",newline="") as h:
    w=csv.writer(h)
    for sym in sorted(repaired):
     for row in repaired[sym]:w.writerow(row)
- print(f"B27B_SELF_REPAIR_RESULT attempted={len(missing)} repaired_symbols={len(repaired)} present_before={len(before)} present_after={len(present(a.bars))} errors={dict(errors)}",flush=True)
- if repaired:print("B27B_SELF_REPAIR_VALIDATED_SAMPLE "+",".join(f"{s}:{used[s]}:{len(repaired[s])}" for s in sorted(repaired)[:20]),flush=True)
+ print(f"B27B_SELF_REPAIR_RESULT attempted={len(missing)} repaired_symbols={len(repaired)} present_before={len(existing)} present_after={len(rows_by_symbol(a.bars))} errors={dict(error_counts)}",flush=True)
+ if repaired: print("B27B_SELF_REPAIR_VALIDATED_SAMPLE "+",".join(f"{s}:{used[s]}:{len(repaired[s])}" for s in sorted(repaired)[:20]),flush=True)
+ if not repaired and not alpha_key and not eod_key:
+  print("B27B_SELF_REPAIR_BLOCKER no_credentialed_delisted_price_source_configured; public Stooq fallback unavailable from runtime",flush=True)
  rc=subprocess.run([sys.executable,"research/universe_audit.py","--bars",a.bars,"--start",a.start,"--end",a.end]).returncode
  print(f"B27B_SELF_REPAIR_AUDIT_RETRY returncode={rc}",flush=True)
  raise SystemExit(rc)
