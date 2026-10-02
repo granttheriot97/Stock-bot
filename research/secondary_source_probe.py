@@ -2,7 +2,7 @@
 
 Diagnostic only: data are never merged into the research bars or used by a strategy.
 """
-import argparse,csv,io,urllib.error,urllib.parse,urllib.request
+import argparse,csv,io,json,os,time,urllib.error,urllib.parse,urllib.request
 from collections import Counter,defaultdict
 from concurrent.futures import ThreadPoolExecutor,as_completed
 
@@ -66,6 +66,10 @@ def main():
     except Exception as exc:
         control_error=error_detail(exc)
     control_ok=control_rows>=252 and control_error is None
+    health_path="/tmp/b27b_provider_health.json"
+    with open(health_path,"w") as health:
+        json.dump({"time":time.time(),"stooq_com":{"healthy":control_ok,"rows":control_rows,"error":control_error}},health)
+    print(f"B27B_PROVIDER_HEALTH_CACHE path={health_path} stooq_com={'HEALTHY' if control_ok else 'UNREACHABLE'}",flush=True)
     print(
         f"B27B_SECONDARY_CONTROL source=stooq symbol=SPY rows={control_rows} "
         f"status={'HEALTHY' if control_ok else 'UNREACHABLE'} "
