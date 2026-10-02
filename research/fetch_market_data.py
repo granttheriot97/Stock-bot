@@ -1,7 +1,7 @@
 """Download split-adjusted daily OHLCV research data from Yahoo chart endpoint.
 Unofficial research bootstrap source only. No execution.
 """
-import argparse,csv,json,urllib.parse,urllib.request,datetime,os,gc,resource
+import argparse,csv,json,urllib.error,urllib.parse,urllib.request,datetime,os,gc,resource,time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 DEFAULT=["SPY","QQQ","IWM","DIA","AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA","JPM","V","XOM","UNH","COST","HD","AMD","NFLX","AVGO","MA","WMT","LLY","ORCL","CRM","BAC","KO","PEP","CSCO","IBM","INTC","QCOM","TXN","AMAT","GE","CAT","BA","DIS","MCD","NKE","LOW","GS","MS","AXP","CVX","COP","ABBV","MRK","TMO","LIN"]
 
@@ -9,7 +9,7 @@ def rss_mb():
     # Linux ru_maxrss is KiB. Report both current process high-water mark and phase.
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024.0
 
-def fetch(symbol,years,as_of):
+def fetch_once(symbol,years,as_of):
     end=int(datetime.datetime.combine(as_of+datetime.timedelta(days=1),datetime.time.min,tzinfo=datetime.timezone.utc).timestamp())
     start=end-int(years*365.25*86400)
     url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(symbol.replace(".", "-"))+"?period1="+str(start)+"&period2="+str(end)+"&interval=1d&events=div%2Csplits&includeAdjustedClose=true"
@@ -23,6 +23,36 @@ def fetch(symbol,years,as_of):
         o,h,l,c,v=vals
         rows.append([datetime.datetime.fromtimestamp(t,datetime.timezone.utc).date().isoformat(),symbol,o,h,l,c,v])
     return rows
+
+def fetch(symbol,years,as_of):
+    attempts=max(1,min(int(os.getenv("B27B_FETCH_ATTEMPTS","3")),5))
+    last_error=None
+    saw_empty=False
+    for attempt in range(1,attempts+1):
+        try:
+            rows=fetch_once(symbol,years,as_of)
+            if rows:
+                if attempt>1:
+                    print(f"B27B_FETCH_RECOVERED symbol={symbol} attempt={attempt} rows={len(rows)}",flush=True)
+                return rows
+            saw_empty=True
+            reason="empty"
+        except urllib.error.HTTPError as e:
+            if e.code==404:
+                raise
+            last_error=e
+            reason=f"http_{e.code}"
+        except (urllib.error.URLError,TimeoutError,ConnectionError,json.JSONDecodeError,KeyError,IndexError,TypeError) as e:
+            last_error=e
+            reason=type(e).__name__
+        if attempt<attempts:
+            print(f"B27B_FETCH_RETRY symbol={symbol} attempt={attempt} reason={reason}",flush=True)
+            time.sleep(0.5*attempt)
+    if saw_empty:
+        return []
+    if last_error is not None:
+        raise last_error
+    return []
 
 def main():
     p=argparse.ArgumentParser();p.add_argument("--symbols",default=",".join(DEFAULT));p.add_argument("--membership-universe",action="store_true");p.add_argument("--former-plus-default",action="store_true");p.add_argument("--years",type=int,default=10);p.add_argument("--as-of",required=True);p.add_argument("--out",default="research/bars.csv");p.add_argument("--resume",action="store_true");a=p.parse_args()
