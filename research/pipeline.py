@@ -45,7 +45,8 @@ def main():
     bars="/tmp/b27b_bars.csv"
     stage("former_probe",f'python research/former_data_probe.py --as-of "{as_of}"',[mem],[],years+"|"+as_of,1)
     stage("market_fetch",f'python research/fetch_market_data.py --membership-universe --resume --years "{years}" --as-of "{as_of}" --out {bars}',[mem],[bars],"full_membership|"+years+"|"+as_of,2)
-    stage("secondary_source_probe",f'python research/secondary_source_probe.py --bars {bars} --membership {mem} --start "{start}" --end "{as_of}"',[mem,bars,"research/secondary_source_probe.py"],[],years+"|"+start+"|"+as_of,0)\n    stage("universe_audit",f'python research/universe_audit.py --bars {bars} --start "{start}" --end "{as_of}"',[mem,bars],[],years+"|"+start+"|"+as_of,0)
+    stage("secondary_source_probe",f'python research/secondary_source_probe.py --bars {bars} --membership {mem} --start "{start}" --end "{as_of}"',[mem,bars,"research/secondary_source_probe.py"],[],years+"|"+start+"|"+as_of,0)
+    stage("universe_audit",f'python research/universe_audit.py --bars {bars} --start "{start}" --end "{as_of}"',[mem,bars],[],years+"|"+start+"|"+as_of,0)
     stage("agent_security","python research/agents/security_test.py",["research/agents/agent_policy.json","research/agents/supervisor.py"],[],years+"|"+cost,0)
     stage("agent_supervisor","python research/agents/supervisor.py",["research/agents/agent_policy.json","research/agents/supervisor.py"],[],years+"|"+cost,0)
     stage("jarvis_security_tests","python research/tests/test_jarvis_security.py",["research/jarvis.py","research/jarvis_policy.json","research/jarvis_supervisor.py"],[],years+"|"+cost,0)
