@@ -64,7 +64,14 @@ def main():
  p=argparse.ArgumentParser();p.add_argument("--bars",required=True);p.add_argument("--membership",required=True);p.add_argument("--start",required=True);p.add_argument("--end",required=True);p.add_argument("--partials");a=p.parse_args()
  periods=memberships(a.membership,a.end); existing=symbols_present(a.bars)
  historical={s for s,spans in periods.items() if any(st<=a.end and en>=a.start for st,en in spans)}
- missing=sorted(historical-existing)\n partial_jobs=[]\n if a.partials:\n  try:\n   report=json.load(open(a.partials))\n   for item in report.get("results",[]):\n    for rg in item.get("ranges",[]):partial_jobs.append((item["symbol"],rg["start"],rg["end"]))\n  except Exception as exc:print("B27B_TARGETED_REPAIR_PARTIALS_ERROR "+type(exc).__name__,flush=True)
+ missing=sorted(historical-existing)
+ partial_jobs=[]
+ if a.partials:
+  try:
+   report=json.load(open(a.partials))
+   for item in report.get("results",[]):
+    for rg in item.get("ranges",[]):partial_jobs.append((item["symbol"],rg["start"],rg["end"]))
+  except Exception as exc:print("B27B_TARGETED_REPAIR_PARTIALS_ERROR "+type(exc).__name__,flush=True)
  alpha_key=os.getenv("ALPHAVANTAGE_API_KEY","").strip(); eod_key=os.getenv("EODHD_API_TOKEN","").strip()
  stooq_hosts=[]
  health_path="/tmp/b27b_provider_health.json"; cached=None
@@ -101,7 +108,8 @@ def main():
     errs.append(name+":empty")
    except Exception as e: errs.append(name+":"+type(e).__name__)
   return sym,None,[],errs,lo,hi
- bulk_enabled=bool(eod_key or alpha_key or stooq_hosts)\n print(f"B27B_TARGETED_REPAIR jobs={len(partial_jobs)} symbols={len(set(x[0] for x in partial_jobs))} provider_ready={str(bulk_enabled).lower()}",flush=True)
+ bulk_enabled=bool(eod_key or alpha_key or stooq_hosts)
+ print(f"B27B_TARGETED_REPAIR jobs={len(partial_jobs)} symbols={len(set(x[0] for x in partial_jobs))} provider_ready={str(bulk_enabled).lower()}",flush=True)
  if bulk_enabled:
   with ThreadPoolExecutor(max_workers=12) as pool:
    fs=[pool.submit(one,s) for s in missing]
