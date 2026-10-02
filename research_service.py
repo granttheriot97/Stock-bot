@@ -40,7 +40,7 @@ def snapshot():
     return state
 class H(BaseHTTPRequestHandler):
     def send_bytes(self,b,ctype):
-        self.send_response(200);self.send_header("Content-Type",ctype);self.send_header("Cache-Control","no-store, no-cache, must-revalidate");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
+        self.send_response(200);self.send_header("Content-Type",ctype);self.send_header("Cache-Control","no-store, no-cache, must-revalidate");self.send_header("Content-Length",str(len(b)));self.end_headers()\n        try:self.wfile.write(b)\n        except (BrokenPipeError,ConnectionResetError):pass
     def do_POST(self):
         route=self.path.split("?",1)[0].rstrip("/") or "/"
         if route not in ("/api/agent-chat","/api/research-command"):self.send_error(404);return
