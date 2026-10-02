@@ -2,6 +2,7 @@
 Research/paper only. Never edits strategy parameters or places trades.
 """
 import hashlib,json,os,signal,subprocess,tempfile,time
+from optimizer_controller import should_run as optimizer_should_run,record as optimizer_record
 from collections import deque
 from datetime import date,timedelta
 STATE=os.getenv("B27B_STATE_DIR","/tmp/b27b_state");os.makedirs(STATE,exist_ok=True);MAN=os.path.join(STATE,"manifest.json")
@@ -21,13 +22,19 @@ def fp(paths,extra=""):
             with open(p,"rb") as f:
                 for b in iter(lambda:f.read(1048576),b""):h.update(b)
     return h.hexdigest()
-def stage(name,cmd,inputs=(),outputs=(),extra="",retries=1,timeout=None):
+def stage(name,cmd,inputs=(),outputs=(),extra="",retries=1,timeout=None,deps=()):
     state=load();sig=fp(inputs,extra);old=state["stages"].get(name,{})
+    run,reason=optimizer_should_run(name,sig,deps=deps)
+    if not run and reason=="failure_cooldown":
+        print(f"B27B_OPTIMIZER_SKIP stage={name} reason={reason}",flush=True);return
+    if not run and reason.startswith("dependency:"):
+        raise SystemExit(f"B27B_OPTIMIZER BLOCK stage={name} reason={reason}")
     if old.get("status")=="complete" and old.get("fingerprint")==sig and all(os.path.exists(x) for x in outputs):
         print(f"B27B_CHECKPOINT_SKIP stage={name}",flush=True);return
     timeout=timeout or int(os.getenv("B27B_STAGE_TIMEOUT","900"))
     for attempt in range(1,retries+2):
-        state=load();state["stages"][name]={"status":"started","fingerprint":sig,"attempt":attempt,"time":time.time()};save(state)
+        started=time.time()
+        state=load();state["stages"][name]={"status":"started","fingerprint":sig,"attempt":attempt,"time":started};save(state)
         print(f"B27B_STAGE_START stage={name} attempt={attempt} timeout={timeout}",flush=True)
         timed_out=False
         with tempfile.TemporaryFile(mode="w+t") as log:
@@ -46,10 +53,12 @@ def stage(name,cmd,inputs=(),outputs=(),extra="",retries=1,timeout=None):
             print(f"B27B_STAGE_TIMEOUT stage={name} attempt={attempt} seconds={timeout}",flush=True)
         if returncode==0 and all(os.path.exists(x) for x in outputs):
             state=load();state["stages"][name]={"status":"complete","fingerprint":sig,"attempt":attempt,"time":time.time()};save(state)
+            optimizer_record(name,sig,"complete",started,{"attempt":attempt})
             print(f"B27B_STAGE_COMPLETE stage={name}",flush=True);return
         print(f"B27B_WATCHDOG_RETRY stage={name} attempt={attempt} returncode={returncode}",flush=True)
         if attempt<=retries:time.sleep(min(2**attempt,8))
     state=load();state["stages"][name]={"status":"failed","fingerprint":sig,"attempt":attempt,"time":time.time()};save(state)
+    optimizer_record(name,sig,"failed",started,{"attempt":attempt})
     raise SystemExit(f"stage failed: {name}")
 def main():
     years=os.getenv("B27B_YEARS","10")
@@ -80,6 +89,7 @@ def main():
     stage("ultron_adversarial",f'B27B_COST_BPS="{cost}" B27B_FREEZE_DATE="{as_of}" python research/agents/ultron.py {bars}',[bars,"research/agents/ultron.py","research/cross_sectional.py"],["/tmp/b27b_ultron_report.json"],cost+"|"+as_of,0)
     stage("edith_record","python research/agents/edith.py pipeline_research_complete",[bars,"research/agents/edith.py"],["/tmp/b27b_edith.jsonl"],cost+"|"+as_of,0)
     stage("gatekeeper","python research/agents/gatekeeper.py /tmp/b27b_gatekeeper_evidence.json",["research/agents/gatekeeper.py"],[],cost+"|"+as_of,0)
+    stage("optimizer_summary","python research/optimizer_controller.py",["research/optimizer_controller.py",MAN],[],years+"|"+cost+"|"+as_of,0)
     print("B27B_PIPELINE_COMPLETE",flush=True)
 if __name__=="__main__":
     main()
