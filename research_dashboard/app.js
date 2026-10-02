@@ -3,9 +3,11 @@ const STAGES=["preflight","agent_security","agent_supervisor","membership_bounda
 const roles=[
 ["Controller",["agent_security","agent_supervisor","membership_boundary_tests","specialist_security_tests","former_probe","repair_queue","secondary_source_probe","ticker_rename_probe","alias_audit_materialization","universe_audit","optimizer_summary"],"⌘"],
 ["FETCH",["fetch_agent"],"F"],["ARCHIVIST",["specialist_former_tickers"],"↺"],["ORACLE",["specialist_corporate_actions"],"⇄"],["CIPHER",["specialist_data_sources"],"◉"],["PULSE",["specialist_bottlenecks","agent_deliberation"],"⌁"],["WATCHDOG",["watchdog_pre_experiments"],"◈"],["GATEKEEPER",["gatekeeper"],"⚿"],["JARVIS",["jarvis_security_tests","jarvis_supervisor","jarvis_audit_log_start","jarvis_audit","jarvis_audit_log_complete"],"J"],["VISION",["vision_multi_strategy","vision_cross_sectional"],"V"],["ULTRON",["ultron_adversarial"],"U"],["EDITH",["edith_record"],"E"]];
-function pct(n){return Math.max(0,Math.min(100,n||0))}\nfunction esc(v){return String(v??"").replace(/[&<>"\']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","\'":"&#39;"}[ch]))}
+function pct(n){return Math.max(0,Math.min(100,n||0))}
+function esc(v){return String(v??"").replace(/[&<>"\']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","\'":"&#39;"}[ch]))}
 function fmt(s){s=Math.max(0,Math.floor(s||0));return s<60?s+"s":Math.floor(s/60)+"m "+s%60+"s"}
-function audit(o){let lines=(o||"").split("\n").filter(x=>x.includes("B27B_UNIVERSE_AUDIT")),line=lines.at(-1)||"",a=line.match(/(?:^|\s)coverage=(\d+(?:\.\d+)?)/),f=line.match(/(?:^|\s)former_coverage=(\d+(?:\.\d+)?)/);return{overall:a?+a[1]*100:null,former:f?+f[1]*100:null}}
+function audit(o){let lines=(o||"").split("
+").filter(x=>x.includes("B27B_UNIVERSE_AUDIT")),line=lines.at(-1)||"",a=line.match(/(?:^|\s)coverage=(\d+(?:\.\d+)?)/),f=line.match(/(?:^|\s)former_coverage=(\d+(?:\.\d+)?)/);return{overall:a?+a[1]*100:null,former:f?+f[1]*100:null}}
 function roleState(cp,keys,active){if(active&&keys.includes(active))return{label:"ACTIVE",cls:"running",detail:active.replaceAll("_"," ")};let found=keys.map(k=>[k,cp[k]]).filter(x=>x[1]);let failed=[...found].reverse().find(x=>x[1].status==="failed");if(failed)return{label:"BLOCKED",cls:"failed",detail:failed[0].replaceAll("_"," ")};if(found.length&&found.every(x=>x[1].status==="complete"))return{label:"COMPLETE",cls:"status",detail:found.at(-1)[0].replaceAll("_"," ")};return{label:"STANDBY",cls:"muted",detail:"queued / dependency not reached"}}
 const GROUPS=[["SECURITY",0,5],["DATA",5,16],["SPECIALISTS",16,21],["AUDIT",21,30],["EXPERIMENTS",30,33],["REVIEW",33,36]];
 const VALIDATION=["preflight","agent_security","agent_supervisor","membership_boundary_tests","specialist_security_tests","universe_audit","jarvis_security_tests","jarvis_supervisor","watchdog_pre_experiments","gatekeeper"];
@@ -24,10 +26,13 @@ $("flow").innerHTML=GROUPS.map(([name,a,b])=>{let names=STAGES.slice(a,b),n=name
 let live=$("liveBar");live.classList.toggle("moving",!!d.active_stage);live.style.width=d.active_stage?"100%":"0";
 if(cv.overall!=null){$("coverage").textContent=cv.overall.toFixed(1)+"%";$("coverageBar").style.width=pct(cv.overall)+"%"}if(cv.former!=null){$("former").textContent=cv.former.toFixed(1)+"%";$("formerBar").style.width=pct(cv.former)+"%"}
 let gate=cp.gatekeeper;$("gate").textContent=gate&&gate.status==="complete"?"CHECKED":"LOCKED";$("gateReason").textContent=gate&&gate.status==="complete"?"Gatekeeper stage completed":"Downstream work remains fail-closed";
-let health=[...(d.output||"").matchAll(/B27B_SELF_REPAIR_CONTROL[^\n]*status=(\w+)/g)];$("providers").textContent=health.length?(health.at(-1)[1]==="HEALTHY"?"HEALTHY":"DEGRADED"):"—";
+let health=[...(d.output||"").matchAll(/B27B_SELF_REPAIR_CONTROL[^
+]*status=(\w+)/g)];$("providers").textContent=health.length?(health.at(-1)[1]==="HEALTHY"?"HEALTHY":"DEGRADED"):"—";
 $("team").innerHTML=roles.map(([name,keys,icon])=>{let x=roleState(cp,keys,d.active_stage);return '<div class="agent '+(x.label==="ACTIVE"?"agentActive":"")+'"><b><i class="agentIcon '+name.toLowerCase().replaceAll(" ","-")+'">'+icon+'</i>'+name+'</b><span class="'+x.cls+'">● '+x.label+'</span><span class="muted">'+x.detail+'</span></div>'}).join("");
 $("pipeline").innerHTML=STAGES.map((name,i)=>{let v=cp[name],[s,cls]=stageState(name,v,d.active_stage),detail=name===d.active_stage?fmt(elapsed):v?(v.duration_s!=null?fmt(v.duration_s)+" • attempt "+(v.attempt||"—"):"attempt "+(v.attempt||"—")):"not reached";return '<div class="stage '+(name===d.active_stage?"stageActive":"")+'"><b>'+(i+1)+'. '+name.replaceAll("_"," ")+'</b><span class="'+cls+'">'+s+'</span><span class="muted">'+detail+'</span></div>'}).join("");
-let lines=(d.output||"").split("\n").filter(x=>/B27B_(FORMER|FETCH|SPECIALIST|RENAME|SECONDARY|REPAIR|UNIVERSE|GATE|OPTIMIZER|STAGE_(START|COMPLETE)|WATCHDOG)/.test(x));$("results").textContent=lines.slice(-40).join("\n")||"Waiting for research output…";$("lastEvent").textContent=d.last_event||"No event yet";$("updated").textContent="LIVE • "+new Date().toLocaleTimeString();
+let lines=(d.output||"").split("
+").filter(x=>/B27B_(FORMER|FETCH|SPECIALIST|RENAME|SECONDARY|REPAIR|UNIVERSE|GATE|OPTIMIZER|STAGE_(START|COMPLETE)|WATCHDOG)/.test(x));$("results").textContent=lines.slice(-40).join("
+")||"Waiting for research output…";$("lastEvent").textContent=d.last_event||"No event yet";$("updated").textContent="LIVE • "+new Date().toLocaleTimeString();
 }catch(e){$("system").textContent="TELEMETRY OFFLINE";$("sub").textContent=e.message;$("updated").textContent="CONNECTION LOST"}}
 tick();setInterval(tick,1000);
 
