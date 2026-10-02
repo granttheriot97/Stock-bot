@@ -1,6 +1,7 @@
 """Incremental Phase-1 coverage scorer. Diagnostic only; fixed gates remain in universe_audit."""
-import argparse,csv,time\nfrom persistent_memory import get as memory_get,put as memory_put
+import argparse,csv,time
 from collections import defaultdict
+from persistent_memory import get as memory_get,put as memory_put
 MIN=0.90
 def main():
  p=argparse.ArgumentParser();p.add_argument("--bars",required=True);p.add_argument("--membership",required=True);p.add_argument("--start",required=True);p.add_argument("--end",required=True);a=p.parse_args()
@@ -19,5 +20,10 @@ def main():
   exp={d for d in cal if any(st<=d and (en is None or d<en) for st,en in periods[s])}
   return bool(exp) and len(bars.get(s,set())&exp)/len(exp)>=MIN
  covered={s for s in hist if complete(s)};fc=covered&former
- print(f"B27B_INCREMENTAL_COVERAGE covered={len(covered)} total={len(hist)} coverage={len(covered)/len(hist) if hist else 0:.4f} former_covered={len(fc)} former_total={len(former)} former_coverage={len(fc)/len(former) if former else 0:.4f}",flush=True)
+ coverage=len(covered)/len(hist) if hist else 0;former_coverage=len(fc)/len(former) if former else 0
+ history=memory_get("coverage_history",[]) or []
+ point={"time":time.time(),"coverage":round(coverage,6),"former_coverage":round(former_coverage,6),"covered":len(covered),"total":len(hist),"former_covered":len(fc),"former_total":len(former)}
+ if not history or any(history[-1].get(k)!=point[k] for k in ("coverage","former_coverage","covered","former_covered")):history.append(point)
+ memory_put("coverage_history",history[-500:])
+ print(f"B27B_INCREMENTAL_COVERAGE covered={len(covered)} total={len(hist)} coverage={coverage:.4f} former_covered={len(fc)} former_total={len(former)} former_coverage={former_coverage:.4f}",flush=True)
 if __name__=="__main__":main()
