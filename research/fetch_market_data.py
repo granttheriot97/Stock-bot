@@ -45,7 +45,10 @@ def main():
     if a.resume and __import__("os").path.exists(a.out):
         try:
             with open(a.out,newline="") as existing:
-                completed={r["symbol"].strip().upper() for r in csv.DictReader(existing)}
+                completed=set()
+                for r in csv.DictReader(existing):
+                    s=r.get("symbol","").strip().upper()
+                    if s: completed.add(s)
         except Exception as e:
             print("B27B_RESUME_READ_ERROR",repr(e),flush=True)
     pending=[s for s in syms if s not in completed]
