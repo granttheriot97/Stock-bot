@@ -26,7 +26,7 @@ def stage(name,cmd,inputs=(),outputs=(),extra="",retries=1,timeout=None,deps=())
     state=load();sig=fp(inputs,extra);old=state["stages"].get(name,{})
     run,reason=optimizer_should_run(name,sig,deps=deps)
     if not run and reason=="failure_cooldown":
-        print(f"B27B_OPTIMIZER_SKIP stage={name} reason={reason}",flush=True);return
+        raise SystemExit(f"B27B_OPTIMIZER BLOCK stage={name} reason={reason}")
     if not run and reason.startswith("dependency:"):
         raise SystemExit(f"B27B_OPTIMIZER BLOCK stage={name} reason={reason}")
     if old.get("status")=="complete" and old.get("fingerprint")==sig and all(os.path.exists(x) for x in outputs):
