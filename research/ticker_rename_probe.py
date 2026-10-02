@@ -31,11 +31,11 @@ def main():
         raise SystemExit("SPY is required for ticker-rename validation")
     calendar=sorted(bars["SPY"])
 
-    periods=defaultdict(list)
+    # End dates are effective transition dates, so membership is [start, end).\n    periods=defaultdict(list)
     with open(a.membership,newline="") as h:
         for row in csv.DictReader(h):
             periods[row["ticker"].strip().upper()].append(
-                (row["start_date"],row["end_date"] or a.end)
+                (row["start_date"],row["end_date"] or None)
             )
 
     results=[]
@@ -46,7 +46,7 @@ def main():
             effective=row["effective_date"]
             expected={
                 date for date in calendar
-                if any(max(start,a.start)<=date<=min(end,a.end) for start,end in periods[old])
+                if any(start<=date and (end is None or date<end) for start,end in periods[old])
             }
             observed=bars.get(new,set()) & expected
             coverage=len(observed)/len(expected) if expected else 0.0
