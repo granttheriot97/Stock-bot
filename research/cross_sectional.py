@@ -207,11 +207,17 @@ def main():
     dates = [row["timestamp"] for row in data["SPY"]]
     cuts = [int(len(dates) * fraction) for fraction in (0.55, 0.65, 0.75, 0.85)]
     membership = load_membership(MEMBERSHIP_PATH)
-    # Freeze a future holdout protocol rather than pretending the tiny unused
-    # tail of already-inspected history is a meaningful untouched test.
-    last_fold_end = min(len(dates), cuts[-1] + int(len(dates) * 0.10))
-    unused_tail = len(dates) - last_fold_end
-    print(f"B27B_HOLDOUT_PROTOCOL frozen_strategy=cross_sectional_momentum_12_1_top10 unused_tail_days={unused_tail} required_days=126 status={'ready' if unused_tail >= 126 else 'accumulating'}")
+    # Genuine forward holdout: only observations strictly after the frozen
+    # protocol date count. Historical unused data never counts as holdout.
+    freeze_date = os.getenv("B27B_FREEZE_DATE", "2026-10-01")
+    post_freeze_days = sum(date > freeze_date for date in dates)
+    required_days = 126
+    holdout_status = "ready" if post_freeze_days >= required_days else "accumulating"
+    print(
+        f"B27B_HOLDOUT_PROTOCOL frozen_strategy=cross_sectional_momentum_12_1_top10 "
+        f"freeze_date={freeze_date} post_freeze_days={post_freeze_days} "
+        f"required_days={required_days} status={holdout_status}"
+    )
     baseline_folds = build_folds(data, maps, dates, cuts)
     point_in_time_folds = build_folds(data, maps, dates, cuts, membership)
 
