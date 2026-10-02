@@ -44,7 +44,7 @@ def main():
     mem="research/data/sp500_ticker_start_end.csv"
     bars="/tmp/b27b_bars.csv"
     stage("former_probe",f'python research/former_data_probe.py --as-of "{as_of}"',[mem],[],years+"|"+as_of,1)
-    stage("market_fetch",f'python research/fetch_market_data.py --membership-universe --resume --years "{years}" --as-of "{as_of}" --out {bars}',[mem],[bars],"full_membership|"+years+"|"+as_of,2)
+    stage("fetch_agent",f'B27B_YEARS="{years}" B27B_AS_OF_DATE="{as_of}" B27B_BARS="{bars}" python research/agents/fetch_agent.py',[mem,"research/agents/fetch_agent.py"],[bars],"full_membership|"+years+"|"+as_of,2)
     stage("secondary_source_probe",f'python research/secondary_source_probe.py --bars {bars} --membership {mem} --start "{start}" --end "{as_of}"',[mem,bars,"research/secondary_source_probe.py"],[],years+"|"+start+"|"+as_of,0)
     stage("universe_audit",f'python research/universe_audit.py --bars {bars} --start "{start}" --end "{as_of}"',[mem,bars],[],years+"|"+start+"|"+as_of,0)
     stage("agent_security","python research/agents/security_test.py",["research/agents/agent_policy.json","research/agents/supervisor.py"],[],years+"|"+cost,0)
@@ -54,8 +54,12 @@ def main():
     stage("jarvis_audit_log_start","python research/jarvis_audit_log.py start",["research/jarvis.py","research/jarvis_policy.json"],[],years+"|"+cost,0)
     stage("jarvis_audit",f"python research/jarvis.py {bars}",[bars,"research/fetch_market_data.py","research/cross_sectional.py","research/jarvis.py","research/jarvis_policy.json"],["/tmp/b27b_jarvis_report.json"],years+"|"+cost,0)
     stage("jarvis_audit_log_complete","python research/jarvis_audit_log.py complete",["/tmp/b27b_jarvis_report.json"],[],years+"|"+cost,0)
-    stage("multi_strategy",f'B27B_COST_BPS="{cost}" python research/multi_strategy.py {bars}',[bars],[],cost,0)
-    stage("cross_sectional",f'B27B_COST_BPS="{cost}" B27B_FREEZE_DATE="{as_of}" B27B_SKIP_RESAMPLING=1 python research/cross_sectional.py {bars}',[bars,mem],[],cost,0)
+    stage("watchdog_pre_experiments","python research/agents/watchdog.py",[MAN],[],years+"|"+cost,0)
+    stage("vision_multi_strategy",f'B27B_COST_BPS="{cost}" python research/agents/vision.py multi_strategy {bars}',[bars,"research/agents/vision.py"],[],cost,0)
+    stage("vision_cross_sectional",f'B27B_COST_BPS="{cost}" B27B_FREEZE_DATE="{as_of}" python research/agents/vision.py cross_sectional {bars}',[bars,mem,"research/agents/vision.py"],[],cost+"|"+as_of,0)
+    stage("ultron_plan","python research/agents/ultron.py",["research/agents/ultron.py"],["/tmp/b27b_ultron_plan.json"],cost,0)
+    stage("edith_record","python research/agents/edith.py pipeline_research_complete",[bars,"research/agents/edith.py"],["/tmp/b27b_edith.jsonl"],cost+"|"+as_of,0)
+    stage("gatekeeper","python research/agents/gatekeeper.py /tmp/b27b_gatekeeper_evidence.json",["research/agents/gatekeeper.py"],[],cost+"|"+as_of,0)
     print("B27B_PIPELINE_COMPLETE",flush=True)
 if __name__=="__main__":
     main()
