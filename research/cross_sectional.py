@@ -54,7 +54,7 @@ def load_membership(path):
 def is_member(periods, symbol, date):
     if periods is None:
         return True
-    return any(start <= date and (end is None or date <= end) for start, end in periods.get(symbol, []))
+    # Membership rows use effective transition dates: active on start, inactive on end.\n    return any(start <= date and (end is None or date < end) for start, end in periods.get(symbol, []))
 
 
 def run_fold(data, maps, dates, start, end, membership=None, removed=None, rng=None):
