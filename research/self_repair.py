@@ -1,7 +1,7 @@
 """Bounded self-repair for recoverable historical-data coverage failures.
 Data repair only: never changes policy, validation thresholds, permissions, strategy, or trading.
 """
-import argparse,csv,io,json,os,subprocess,sys,time,urllib.error,urllib.parse,urllib.request
+import argparse,csv,hashlib,io,json,os,subprocess,sys,time,urllib.error,urllib.parse,urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor,as_completed
 from persistent_memory import get as memory_get,put as memory_put
@@ -46,7 +46,7 @@ def alpha(symbol,start,end,key):
  req=urllib.request.Request("https://www.alphavantage.co/query?"+q,headers={"User-Agent":"B27B-research-repair/2.3"})
  with urllib.request.urlopen(req,timeout=12) as x: body=x.read().decode("utf-8","replace")
  low=body.lower()
- if "premium" in low or "information" in low and not body.lower().startswith("timestamp,"):
+ if not low.startswith("timestamp,") and ("premium" in low or "information" in low):
   raise RuntimeError("full_history_unavailable")
  return normalize(symbol,csv.DictReader(io.StringIO(body)),start,end)
 
@@ -117,7 +117,8 @@ def main():
  def one(sym,job_start=None,job_end=None):
   lo=job_start or a.start;hi=job_end or a.end
   attempts=[]
-  prior=provider_memory.get(sym,{}) if isinstance(provider_memory,dict) else {}
+  range_key=sym+"|"+lo+"|"+hi
+  prior=provider_memory.get(range_key,{}) if isinstance(provider_memory,dict) else {}
   if eod_key and int(prior.get("eodhd",0))<2: attempts.append(("eodhd",lambda:eodhd(sym,lo,hi,eod_key)))
   if alpha_ready and int(prior.get("alphavantage",0))<2: attempts.append(("alphavantage",lambda:alpha(sym,lo,hi,alpha_key)))
   if wiki_key and lo<="2018-04-11" and int(prior.get("nasdaq_wiki",0))<2: attempts.append(("nasdaq_wiki",lambda:nasdaq_wiki(sym,lo,min(hi,"2018-04-11"),wiki_key)))
@@ -140,21 +141,40 @@ def main():
     for e in errs:
      error_counts[e]+=1
      provider=e.split(':',1)[0]
-     provider_memory.setdefault(sym,{})[provider]=int(provider_memory.setdefault(sym,{}).get(provider,0))+1
+     range_key=sym+"|"+lo+"|"+hi
+     provider_memory.setdefault(range_key,{})[provider]=int(provider_memory.setdefault(range_key,{}).get(provider,0))+1
     if rows:
      repaired.setdefault(sym,[]).extend(rows);used[sym]=name
-     provider_memory.pop(sym,None)
+     provider_memory.pop(sym+"|"+lo+"|"+hi,None)
  if repaired:
-  with open(a.bars,"a",newline="") as h:
-   w=csv.writer(h)
-   for sym in sorted(repaired):
-    for row in repaired[sym]:w.writerow(row)
+  seen=set();cleaned={};provenance=[]
+  with open(a.bars,newline="") as h:
+   for r in csv.DictReader(h):
+    s=r.get("symbol","").strip().upper();d=r.get("date","").strip()
+    if s and d:seen.add((s,d))
+  for sym in sorted(repaired):
+   uniq=[]
+   for row in repaired[sym]:
+    key=(sym,str(row[0]))
+    if key in seen:continue
+    seen.add(key);uniq.append(row)
+   if uniq:
+    cleaned[sym]=uniq
+    digest=hashlib.sha256(("\n".join(",".join(map(str,r)) for r in uniq)).encode()).hexdigest()
+    provenance.append({"symbol":sym,"provider":used.get(sym),"rows":len(uniq),"start":min(str(r[0]) for r in uniq),"end":max(str(r[0]) for r in uniq),"sha256":digest})
+  repaired=cleaned
+  if repaired:
+   with open(a.bars,"a",newline="") as h:
+    w=csv.writer(h)
+    for sym in sorted(repaired):
+     for row in repaired[sym]:w.writerow(row)
+   print("B27B_REPAIR_PROVENANCE "+json.dumps(provenance,separators=(",",":")),flush=True)
  memory_put("provider_symbol_failures",provider_memory)
  present_after=len(existing|set(repaired))
  requested=len(missing)+len(partial_jobs);attempted=requested if bulk_enabled else 0
  print(f"B27B_SELF_REPAIR_RESULT requested={requested} attempted={attempted} skipped={requested-attempted} repaired_symbols={len(repaired)} present_before={len(existing)} present_after={present_after} errors={dict(error_counts)}",flush=True)
  if repaired: print("B27B_SELF_REPAIR_VALIDATED_SAMPLE "+",".join(f"{s}:{used[s]}:{len(repaired[s])}" for s in sorted(repaired)[:20]),flush=True)
- if not repaired and not alpha_key and not eod_key and not wiki_key:
+ if not repaired and not bulk_enabled:
   detail="public Stooq fallbacks unavailable from runtime" if not stooq_hosts else "public fallbacks returned no usable missing-symbol histories"
   print("B27B_SELF_REPAIR_BLOCKER no_credentialed_delisted_price_source_configured; "+detail,flush=True)
  rc=subprocess.run([sys.executable,"research/universe_audit.py","--bars",a.bars,"--start",a.start,"--end",a.end]).returncode
