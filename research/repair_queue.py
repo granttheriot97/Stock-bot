@@ -1,0 +1,53 @@
+"""Build a deterministic repair queue and ledger for B27B universe gaps.
+Research-only. This stage classifies/prioritizes gaps; it never mutates market bars,
+validation thresholds, strategy inputs, or trading permissions.
+"""
+import argparse,csv,json,os
+from collections import defaultdict
+
+def main():
+    p=argparse.ArgumentParser()
+    p.add_argument("--bars",required=True); p.add_argument("--membership",required=True)
+    p.add_argument("--aliases",required=True); p.add_argument("--start",required=True); p.add_argument("--end",required=True)
+    p.add_argument("--ledger",required=True); p.add_argument("--queue",required=True)
+    a=p.parse_args()
+    bars=defaultdict(set)
+    with open(a.bars,newline="") as h:
+        for r in csv.DictReader(h):
+            s=r.get("symbol","").strip().upper(); d=r.get("timestamp","")
+            if s and a.start<=d<=a.end: bars[s].add(d)
+    cal=sorted(bars.get("SPY",set()))
+    periods=defaultdict(list); former=set()
+    with open(a.membership,newline="") as h:
+        for r in csv.DictReader(h):
+            s=r["ticker"].strip().upper(); en=r["end_date"] or None
+            periods[s].append((r["start_date"],en))
+            if en and a.start<en<=a.end: former.add(s)
+    historical={s for s,spans in periods.items() if any(st<=a.end and (en is None or en>a.start) for st,en in spans)}
+    aliases={}
+    with open(a.aliases,newline="") as h:
+        for r in csv.DictReader(h):
+            aliases[r["old_symbol"].strip().upper()]=r["new_symbol"].strip().upper()
+    rows=[]
+    for s in sorted(historical):
+        expected={d for d in cal if any(st<=d and (en is None or d<en) for st,en in periods[s])}
+        obs=bars.get(s,set()) & expected
+        comp=len(obs)/len(expected) if expected else 0.0
+        if comp>=0.90: continue
+        if not bars.get(s): cls="missing_history"
+        else: cls="partial_history"
+        if s in aliases: cls="known_ticker_transition"
+        priority=(0 if s in former else 1, 0 if cls=="known_ticker_transition" else 1, comp, s)
+        rows.append({"symbol":s,"former":s in former,"classification":cls,"completeness":round(comp,6),
+                     "expected_days":len(expected),"observed_days":len(obs),"candidate_successor":aliases.get(s,""),
+                     "_priority":priority})
+    rows.sort(key=lambda r:r["_priority"])
+    for i,r in enumerate(rows,1): r["priority_rank"]=i; r.pop("_priority",None)
+    os.makedirs(os.path.dirname(a.ledger) or ".",exist_ok=True)
+    fields=["priority_rank","symbol","former","classification","completeness","expected_days","observed_days","candidate_successor"]
+    with open(a.ledger,"w",newline="") as h:
+        w=csv.DictWriter(h,fieldnames=fields); w.writeheader(); w.writerows(rows)
+    with open(a.queue,"w") as h: json.dump({"research_only":True,"bars_mutated":False,"gates_changed":False,"items":rows},h,indent=2)
+    print(f"B27B_REPAIR_QUEUE gaps={len(rows)} former_first={sum(r['former'] for r in rows)} known_transitions={sum(r['classification']=='known_ticker_transition' for r in rows)} ledger={a.ledger}",flush=True)
+    print("B27B_REPAIR_PRIORITY_SAMPLE "+(",".join(r["symbol"] for r in rows[:20]) or "-"),flush=True)
+if __name__=="__main__": main()
