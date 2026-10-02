@@ -81,7 +81,7 @@ class H(BaseHTTPRequestHandler):
         route=self.path.split("?",1)[0].rstrip("/") or "/"
         if route=="/api/status":return self.send_bytes(json.dumps(snapshot()).encode(),"application/json")
         if route=="/api/research-room":
-            data={"discussion":memory_get("agent_deliberation_latest",{}),"history":memory_get("agent_discussion_history",[]),"room":memory_get("agent_research_room",{}),"chats":memory_get("agent_chat_threads",{})}
+            data={"discussion":memory_get("agent_deliberation_latest",{}),"history":memory_get("agent_discussion_history",[]),"room":memory_get("agent_research_room",{}),"chats":memory_get("agent_chat_threads",{}),"cases":memory_get("ticker_case_files",{}),"tasks":memory_get("agent_task_queue",[]),"activity":memory_get("agent_activity",{}),"coverage_history":memory_get("coverage_history",[])}
             return self.send_bytes(json.dumps(data).encode(),"application/json")
         if route in ("/","/command-center"):path=os.path.join(DASH,"index.html")
         elif route.startswith("/command-center/"):
