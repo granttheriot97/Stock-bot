@@ -1,6 +1,7 @@
 """B27B multi-strategy walk-forward research. Paper/research only."""
 import argparse,csv,math,os
 from collections import defaultdict
+from strategy_catalog import by_implementation
 COST_BPS=float(os.getenv("B27B_COST_BPS","5"));MIN_BARS=600
 def f(x):
     try:return float(x)
@@ -76,7 +77,7 @@ def benchmark(rows,start_ts,end_ts):
     w=[r for r in rows if start_ts<=r["timestamp"]<=end_ts]
     return None if len(w)<2 else w[-1]["open"]/w[0]["open"]-1
 def main():
-    p=argparse.ArgumentParser();p.add_argument("csv");a=p.parse_args();names=["momentum","mean_reversion","breakout","relative_strength"]
+    p=argparse.ArgumentParser();p.add_argument("csv");a=p.parse_args();names=[x.name for x in by_implementation("multi_strategy")]
     batch_size=max(1,int(os.getenv("B27B_SYMBOL_BATCH_SIZE","32")));syms=symbols(a.csv)
     print("symbol,strategy,folds,positive_folds,avg_test_return,compound_oos_return,min_fold_return,avg_sharpe,worst_drawdown,total_trades,asset_buyhold_return,spy_return,beats_asset_folds,beats_spy_folds,passes")
     for offset in range(0,len(syms),batch_size):
