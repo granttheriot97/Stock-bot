@@ -17,6 +17,8 @@ jobs:
           node-version: "22"
       - name: Python syntax and B27B invariants
         run: python research/preflight.py
+      - name: Multi-strategy memory regression
+        run: python -m unittest research.tests.test_multi_strategy_memory
       - name: Dashboard JavaScript syntax
         run: node --check research_dashboard/app.js
       - name: Compile research modules
