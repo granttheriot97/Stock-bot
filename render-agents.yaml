@@ -1,0 +1,7 @@
+services:
+  - type: worker
+    name: b27b-agents
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m agents.supervisor
+    autoDeployTrigger: commit
