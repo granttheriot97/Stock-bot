@@ -5,11 +5,22 @@ COST_BPS=float(os.getenv("B27B_COST_BPS","5"));MIN_BARS=600
 def f(x):
     try:return float(x)
     except:return float("nan")
-def load(path):
-    by=defaultdict(list)
+def symbols(path):
+    """Discover symbols without retaining market history in memory."""
+    out=set()
+    with open(path,newline="") as h:
+        for r in csv.DictReader(h):
+            s=r.get("symbol")
+            if s:out.add(s)
+    return sorted(out)
+
+def load(path, wanted):
+    """Load only one bounded symbol batch plus SPY benchmark history."""
+    wanted=set(wanted);wanted.add("SPY");by=defaultdict(list)
     with open(path,newline="") as h:
         for r in csv.DictReader(h):
             try:
+                if r.get("symbol") not in wanted:continue
                 row={k:r[k] for k in ("timestamp","symbol")}
                 for k in ("open","high","low","close","volume"):row[k]=f(r[k])
                 if all(math.isfinite(row[k]) for k in ("open","high","low","close","volume")):by[row["symbol"]].append(row)
@@ -65,10 +76,13 @@ def benchmark(rows,start_ts,end_ts):
     w=[r for r in rows if start_ts<=r["timestamp"]<=end_ts]
     return None if len(w)<2 else w[-1]["open"]/w[0]["open"]-1
 def main():
-    p=argparse.ArgumentParser();p.add_argument("csv");a=p.parse_args();data=load(a.csv);names=["momentum","mean_reversion","breakout","relative_strength"]
+    p=argparse.ArgumentParser();p.add_argument("csv");a=p.parse_args();names=["momentum","mean_reversion","breakout","relative_strength"]
+    batch_size=max(1,int(os.getenv("B27B_SYMBOL_BATCH_SIZE","32")));syms=symbols(a.csv)
     print("symbol,strategy,folds,positive_folds,avg_test_return,compound_oos_return,min_fold_return,avg_sharpe,worst_drawdown,total_trades,asset_buyhold_return,spy_return,beats_asset_folds,beats_spy_folds,passes")
-    spy=data.get("SPY",[])
-    for sym,rows in sorted(data.items()):
+    for offset in range(0,len(syms),batch_size):
+      batch=syms[offset:offset+batch_size];data=load(a.csv,batch);spy=data.get("SPY",[])
+      for sym in batch:
+        rows=data.get(sym,[])
         if len(rows)<MIN_BARS:continue
         cuts=[int(len(rows)*x) for x in (.55,.65,.75,.85)]
         for name in names:
