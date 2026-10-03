@@ -1,0 +1,191 @@
+"""Bounded self-repair for recoverable historical-data coverage failures.
+Data repair only: never changes policy, validation thresholds, permissions, strategy, or trading.
+"""
+import argparse,csv,hashlib,io,json,os,subprocess,sys,time,urllib.error,urllib.parse,urllib.request
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor,as_completed
+from persistent_memory import get as memory_get,put as memory_put
+
+def memberships(path,end):
+ d=defaultdict(list)
+ with open(path,newline="") as h:
+  for r in csv.DictReader(h): d[r["ticker"].strip().upper()].append((r["start_date"],r["end_date"] or end))
+ return d
+
+def symbols_present(path):
+ out=set()
+ with open(path,newline="") as h:
+  for r in csv.DictReader(h):
+   s=r.get("symbol","").strip().upper()
+   if s: out.add(s)
+ return out
+
+def valid_values(date,o,hi,lo,c,v,start,end):
+ try:
+  o,hi,lo,c,v=map(float,(o,hi,lo,c,v))
+  return start<=date<=end and min(o,hi,lo,c)>0 and v>=0 and hi>=max(o,c,lo) and lo<=min(o,c,hi)
+ except Exception:return False
+
+def normalize(symbol,records,start,end):
+ out=[]
+ for r in records:
+  date=r.get("date") or r.get("Date")
+  o=r.get("open") or r.get("Open"); hi=r.get("high") or r.get("High")
+  lo=r.get("low") or r.get("Low"); c=r.get("close") or r.get("Close"); v=r.get("volume") or r.get("Volume")
+  if date and valid_values(date,o,hi,lo,c,v,start,end): out.append([date,symbol,o,hi,lo,c,v])
+ return out
+
+def stooq(symbol,start,end,host):
+ q=urllib.parse.urlencode({"s":symbol.lower()+".us","d1":start.replace("-",""),"d2":end.replace("-",""),"i":"d"})
+ req=urllib.request.Request(host+"?"+q,headers={"User-Agent":"Mozilla/5.0 B27B-research-repair/2.1"})
+ with urllib.request.urlopen(req,timeout=4) as x: body=x.read().decode("utf-8","replace")
+ return normalize(symbol,csv.DictReader(io.StringIO(body)),start,end)
+
+def alpha(symbol,start,end,key):
+ q=urllib.parse.urlencode({"function":"TIME_SERIES_DAILY","symbol":symbol,"outputsize":"full","datatype":"csv","apikey":key})
+ req=urllib.request.Request("https://www.alphavantage.co/query?"+q,headers={"User-Agent":"B27B-research-repair/2.3"})
+ with urllib.request.urlopen(req,timeout=12) as x: body=x.read().decode("utf-8","replace")
+ low=body.lower()
+ if not low.startswith("timestamp,") and ("premium" in low or "information" in low):
+  raise RuntimeError("full_history_unavailable")
+ return normalize(symbol,csv.DictReader(io.StringIO(body)),start,end)
+
+def alpha_full_history_ready(key,start,end):
+ if not key:return False,"no_key"
+ try:
+  rows=alpha("SPY",start,end,key)
+  return len(rows)>=252,("rows="+str(len(rows)))
+ except Exception as exc:return False,error_detail(exc)+":"+str(exc)[:80]
+
+def nasdaq_wiki(symbol,start,end,key):
+ q=urllib.parse.urlencode({"ticker":symbol,"date.gte":start,"date.lte":end,"qopts.columns":"ticker,date,open,high,low,close,volume","api_key":key})
+ req=urllib.request.Request("https://data.nasdaq.com/api/v3/datatables/WIKI/PRICES.json?"+q,headers={"User-Agent":"B27B-research-repair/2.2"})
+ with urllib.request.urlopen(req,timeout=15) as x:data=json.loads(x.read().decode("utf-8","replace"))
+ dt=data.get("datatable",{});cols=[x.get("name") for x in dt.get("columns",[])]
+ records=[dict(zip(cols,row)) for row in dt.get("data",[])]
+ return normalize(symbol,records,start,end)
+
+def eodhd(symbol,start,end,key):
+ q=urllib.parse.urlencode({"api_token":key,"fmt":"json","from":start,"to":end})
+ req=urllib.request.Request(f"https://eodhd.com/api/eod/{urllib.parse.quote(symbol+'.US')}?"+q,headers={"User-Agent":"B27B-research-repair/2.1"})
+ with urllib.request.urlopen(req,timeout=12) as x: data=json.loads(x.read().decode("utf-8","replace"))
+ return normalize(symbol,data if isinstance(data,list) else [],start,end)
+
+def error_detail(exc):
+ if isinstance(exc,urllib.error.HTTPError): return type(exc).__name__+f":{exc.code}"
+ if isinstance(exc,urllib.error.URLError):
+  reason=getattr(exc,"reason",None)
+  if reason is not None:return type(exc).__name__+":"+type(reason).__name__
+ return type(exc).__name__
+
+def main():
+ p=argparse.ArgumentParser();p.add_argument("--bars",required=True);p.add_argument("--membership",required=True);p.add_argument("--start",required=True);p.add_argument("--end",required=True);p.add_argument("--partials");a=p.parse_args()
+ periods=memberships(a.membership,a.end); existing=symbols_present(a.bars)
+ historical={s for s,spans in periods.items() if any(st<=a.end and en>=a.start for st,en in spans)}
+ missing=sorted(historical-existing)
+ partial_jobs=[]
+ if a.partials:
+  try:
+   report=json.load(open(a.partials))
+   for item in report.get("results",[]):
+    for rg in item.get("ranges",[]):partial_jobs.append((item["symbol"],rg["start"],rg["end"]))
+  except Exception as exc:print("B27B_TARGETED_REPAIR_PARTIALS_ERROR "+type(exc).__name__,flush=True)
+ alpha_key=os.getenv("ALPHAVANTAGE_API_KEY","").strip(); eod_key=os.getenv("EODHD_API_TOKEN","").strip(); wiki_key=os.getenv("NASDAQ_DATA_LINK_API_KEY","").strip()
+ external_dependency=os.getenv("B27B_HISTORICAL_EXTERNAL_DEPENDENCY","unavailable").strip().lower()
+ external_blocked=external_dependency in ("unavailable","blocked","1","true","yes")
+ if external_blocked:
+  alpha_ready,alpha_status=False,"external_dependency_unavailable"
+ else:
+  alpha_ready,alpha_status=alpha_full_history_ready(alpha_key,a.start,a.end)
+ print(f"B27B_ALPHA_CONTROL configured={str(bool(alpha_key)).lower()} full_history_ready={str(alpha_ready).lower()} detail={alpha_status}",flush=True)
+ stooq_hosts=[]
+ health_path="/tmp/b27b_provider_health.json"; cached=None
+ try:
+  with open(health_path) as h: cached=json.load(h)
+  if time.time()-float(cached.get("time",0))>1800: cached=None
+ except Exception: cached=None
+ for name,host in (("stooq-com","https://stooq.com/q/d/l/"),("stooq-pl","https://stooq.pl/q/d/l/")):
+  rows=0;err=None;cache_hit=False
+  if external_blocked:
+   print(f"B27B_SELF_REPAIR_CONTROL source={name} symbol=SPY rows=0 status=EXTERNAL_DEPENDENCY_UNAVAILABLE error=- cache_hit=false",flush=True)
+   continue
+  if name=="stooq-com" and cached and "stooq_com" in cached:
+   item=cached["stooq_com"]; rows=int(item.get("rows",0)); err=item.get("error"); healthy=bool(item.get("healthy")); cache_hit=True
+  else:
+   try: rows=len(stooq("SPY",a.start,a.end,host))
+   except Exception as exc: err=error_detail(exc)
+   healthy=rows>=252 and err is None
+  if healthy:stooq_hosts.append((name,host))
+  print(f"B27B_SELF_REPAIR_CONTROL source={name} symbol=SPY rows={rows} status={'HEALTHY' if healthy else 'UNREACHABLE'} error={err or '-'} cache_hit={str(cache_hit).lower()}",flush=True)
+ root_cause="historical/delisted dataset unavailable external dependency" if external_blocked else "primary Yahoo endpoint returns 404 for historical/delisted symbols"
+ if not external_blocked and not stooq_hosts:root_cause+="; public Stooq endpoints unreachable from runtime"
+ print("B27B_SELF_REPAIR_DIAGNOSIS "+json.dumps({"failure_class":"historical_symbol_source_gap","recoverable":bool(missing),"missing_count":len(missing),"root_cause":root_cause,"credentialed_fallbacks":{"alphavantage":alpha_ready,"eodhd":bool(eod_key),"nasdaq_wiki":bool(wiki_key)},"healthy_public_fallbacks":[name for name,_ in stooq_hosts],"external_dependency_blocked":external_blocked,"memory_mode":"streaming_symbol_scan"},separators=(",",":")),flush=True)
+ repaired={};used={};error_counts=defaultdict(int)
+ provider_memory=memory_get("provider_symbol_failures",{}) or {}
+ def one(sym,job_start=None,job_end=None):
+  lo=job_start or a.start;hi=job_end or a.end
+  attempts=[]
+  range_key=sym+"|"+lo+"|"+hi
+  prior=provider_memory.get(range_key,{}) if isinstance(provider_memory,dict) else {}
+  if eod_key and int(prior.get("eodhd",0))<2: attempts.append(("eodhd",lambda:eodhd(sym,lo,hi,eod_key)))
+  if alpha_ready and int(prior.get("alphavantage",0))<2: attempts.append(("alphavantage",lambda:alpha(sym,lo,hi,alpha_key)))
+  if wiki_key and lo<="2018-04-11" and int(prior.get("nasdaq_wiki",0))<2: attempts.append(("nasdaq_wiki",lambda:nasdaq_wiki(sym,lo,min(hi,"2018-04-11"),wiki_key)))
+  attempts += [(name,lambda host=host:stooq(sym,lo,hi,host)) for name,host in stooq_hosts if int(prior.get(name,0))<2]
+  errs=[]
+  for name,fn in attempts:
+   try:
+    rows=fn()
+    if rows:return sym,name,rows,errs,lo,hi
+    errs.append(name+":empty")
+   except Exception as e: errs.append(name+":"+type(e).__name__)
+  return sym,None,[],errs,lo,hi
+ bulk_enabled=bool(eod_key or alpha_ready or wiki_key or stooq_hosts)
+ print(f"B27B_TARGETED_REPAIR jobs={len(partial_jobs)} symbols={len(set(x[0] for x in partial_jobs))} provider_ready={str(bulk_enabled).lower()}",flush=True)
+ if bulk_enabled:
+  with ThreadPoolExecutor(max_workers=12) as pool:
+   fs=[pool.submit(one,s) for s in missing]+[pool.submit(one,s,lo,hi) for s,lo,hi in partial_jobs]
+   for f in as_completed(fs):
+    sym,name,rows,errs,lo,hi=f.result()
+    for e in errs:
+     error_counts[e]+=1
+     provider=e.split(':',1)[0]
+     range_key=sym+"|"+lo+"|"+hi
+     provider_memory.setdefault(range_key,{})[provider]=int(provider_memory.setdefault(range_key,{}).get(provider,0))+1
+    if rows:
+     repaired.setdefault(sym,[]).extend(rows);used[sym]=name
+     provider_memory.pop(sym+"|"+lo+"|"+hi,None)
+ if repaired:
+  seen=set();cleaned={};provenance=[]
+  with open(a.bars,newline="") as h:
+   for r in csv.DictReader(h):
+    s=r.get("symbol","").strip().upper();d=r.get("date","").strip()
+    if s and d:seen.add((s,d))
+  for sym in sorted(repaired):
+   uniq=[]
+   for row in repaired[sym]:
+    key=(sym,str(row[0]))
+    if key in seen:continue
+    seen.add(key);uniq.append(row)
+   if uniq:
+    cleaned[sym]=uniq
+    digest=hashlib.sha256(("\n".join(",".join(map(str,r)) for r in uniq)).encode()).hexdigest()
+    provenance.append({"symbol":sym,"provider":used.get(sym),"rows":len(uniq),"start":min(str(r[0]) for r in uniq),"end":max(str(r[0]) for r in uniq),"sha256":digest})
+  repaired=cleaned
+  if repaired:
+   with open(a.bars,"a",newline="") as h:
+    w=csv.writer(h)
+    for sym in sorted(repaired):
+     for row in repaired[sym]:w.writerow(row)
+   print("B27B_REPAIR_PROVENANCE "+json.dumps(provenance,separators=(",",":")),flush=True)
+ memory_put("provider_symbol_failures",provider_memory)
+ present_after=len(existing|set(repaired))
+ requested=len(missing)+len(partial_jobs);attempted=requested if bulk_enabled else 0
+ print(f"B27B_SELF_REPAIR_RESULT requested={requested} attempted={attempted} skipped={requested-attempted} repaired_symbols={len(repaired)} present_before={len(existing)} present_after={present_after} errors={dict(error_counts)}",flush=True)
+ if repaired: print("B27B_SELF_REPAIR_VALIDATED_SAMPLE "+",".join(f"{s}:{used[s]}:{len(repaired[s])}" for s in sorted(repaired)[:20]),flush=True)
+ if not repaired and not bulk_enabled:
+  detail="public Stooq fallbacks unavailable from runtime" if not stooq_hosts else "public fallbacks returned no usable missing-symbol histories"
+  print("B27B_SELF_REPAIR_BLOCKER no_credentialed_delisted_price_source_configured; "+detail,flush=True)
+ rc=subprocess.run([sys.executable,"research/universe_audit.py","--bars",a.bars,"--start",a.start,"--end",a.end]).returncode
+ print(f"B27B_SELF_REPAIR_AUDIT_RETRY returncode={rc}",flush=True)
+ raise SystemExit(rc)
+if __name__=="__main__":main()
