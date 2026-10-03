@@ -6,16 +6,39 @@ def f(x):
     try:return float(x)
     except:return float("nan")
 def load(path):
-    by=defaultdict(list)
+    """Disk-backed market-data store.
+
+    The previous implementation materialized the full universe as nested Python
+    dictionaries. On constrained workers that can multiply the CSV's on-disk
+    size several times over. Keep the raw universe on disk and materialize only
+    one symbol at a time; strategy math and thresholds remain unchanged.
+    """
+    import sqlite3,tempfile
+    fd,dbpath=tempfile.mkstemp(prefix="b27b_multi_",suffix=".sqlite3")
+    os.close(fd)
+    db=sqlite3.connect(dbpath)
+    db.execute("PRAGMA journal_mode=OFF")
+    db.execute("PRAGMA synchronous=OFF")
+    db.execute("CREATE TABLE bars(timestamp TEXT,symbol TEXT,open REAL,high REAL,low REAL,close REAL,volume REAL)")
+    batch=[]
     with open(path,newline="") as h:
         for r in csv.DictReader(h):
             try:
-                row={k:r[k] for k in ("timestamp","symbol")}
-                for k in ("open","high","low","close","volume"):row[k]=f(r[k])
-                if all(math.isfinite(row[k]) for k in ("open","high","low","close","volume")):by[row["symbol"]].append(row)
+                vals=(r["timestamp"],r["symbol"],f(r["open"]),f(r["high"]),f(r["low"]),f(r["close"]),f(r["volume"]))
+                if all(math.isfinite(x) for x in vals[2:]):
+                    batch.append(vals)
+                    if len(batch)>=5000:
+                        db.executemany("INSERT INTO bars VALUES(?,?,?,?,?,?,?)",batch);batch.clear()
             except:pass
-    for s in by:by[s].sort(key=lambda x:x["timestamp"])
-    return by
+    if batch:db.executemany("INSERT INTO bars VALUES(?,?,?,?,?,?,?)",batch)
+    db.execute("CREATE INDEX bars_symbol_time ON bars(symbol,timestamp)")
+    db.commit()
+    return db,dbpath
+def symbols(db):
+    return [r[0] for r in db.execute("SELECT DISTINCT symbol FROM bars ORDER BY symbol")]
+def rows_for(db,symbol):
+    q="SELECT timestamp,symbol,open,high,low,close,volume FROM bars WHERE symbol=? ORDER BY timestamp"
+    return [{"timestamp":r[0],"symbol":r[1],"open":r[2],"high":r[3],"low":r[4],"close":r[5],"volume":r[6]} for r in db.execute(q,(symbol,))]
 def sma(a,n,i):return None if i+1<n else sum(a[i-n+1:i+1])/n
 def std(a,n,i):
     m=sma(a,n,i)
@@ -65,10 +88,12 @@ def benchmark(rows,start_ts,end_ts):
     w=[r for r in rows if start_ts<=r["timestamp"]<=end_ts]
     return None if len(w)<2 else w[-1]["open"]/w[0]["open"]-1
 def main():
-    p=argparse.ArgumentParser();p.add_argument("csv");a=p.parse_args();data=load(a.csv);names=["momentum","mean_reversion","breakout","relative_strength"]
+    p=argparse.ArgumentParser();p.add_argument("csv");a=p.parse_args();db,dbpath=load(a.csv);names=["momentum","mean_reversion","breakout","relative_strength"]
     print("symbol,strategy,folds,positive_folds,avg_test_return,compound_oos_return,min_fold_return,avg_sharpe,worst_drawdown,total_trades,asset_buyhold_return,spy_return,beats_asset_folds,beats_spy_folds,passes")
-    spy=data.get("SPY",[])
-    for sym,rows in sorted(data.items()):
+    spy=rows_for(db,"SPY")
+    try:
+      for sym in symbols(db):
+        rows=rows_for(db,sym)
         if len(rows)<MIN_BARS:continue
         cuts=[int(len(rows)*x) for x in (.55,.65,.75,.85)]
         for name in names:
@@ -84,4 +109,8 @@ def main():
             wins=sum(x[0]["return"]>x[1] for x in out);spywins=sum(x[0]["return"]>x[2] for x in out)
             passes=pos>=3 and avg>0 and compound>0 and sh>.5 and tr>=20 and dd>-.25 and wins>=3 and spywins>=3
             print(f"{sym},{name},{len(out)},{pos},{avg:.6f},{compound:.6f},{minfold:.6f},{sh:.3f},{dd:.6f},{tr},{bh:.6f},{sbh:.6f},{wins},{spywins},{passes}")
+    finally:
+        db.close()
+        try:os.unlink(dbpath)
+        except FileNotFoundError:pass
 if __name__=="__main__":main()
