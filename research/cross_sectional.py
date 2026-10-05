@@ -10,7 +10,7 @@ import os
 import random
 from collections import defaultdict
 
-from multi_strategy import load
+from multi_strategy import load, symbols as list_symbols
 
 COST_BPS = float(os.getenv("B27B_COST_BPS", "5"))
 EXCLUDE = {"SPY", "QQQ", "IWM", "DIA"}
@@ -201,7 +201,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("csv")
     args = parser.parse_args()
-    data = load(args.csv)
+    data = load(args.csv, list_symbols(args.csv))
     if "SPY" not in data:
         raise SystemExit("SPY is required")
     maps = build_maps(data)
