@@ -5,3 +5,5 @@
 .historysession{border-top:1px solid rgba(255,255,255,.08)}.historysession summary{cursor:pointer;list-style:none}.historysession summary::-webkit-details-marker{display:none}.historysession[open] summary{background:rgba(255,255,255,.025)}.sessiondetail{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:12px 16px 16px;font-size:.82rem;color:#aeb7c4}.sessiondetail span{padding:8px 10px;border:1px solid rgba(255,255,255,.07);border-radius:8px}
 
 .simpleview{border-width:2px}.simplelead{font-size:1.15rem;line-height:1.55;margin:8px 0 18px;max-width:900px}.simpleexplain{margin-top:16px;padding:14px 16px;border-radius:10px;background:rgba(255,255,255,.035);line-height:1.55}.simpleexplain strong{color:#fff}
+
+.wedding-message{margin-top:18px;padding:20px;text-align:center;font-size:22px;font-weight:800;letter-spacing:.01em;background:#101b25;border:1px solid #71d6a6;border-radius:16px;color:#e8eef4;box-shadow:0 0 0 1px rgba(113,214,166,.12) inset}.wedding-message::before{content:"♥ ";color:#71d6a6}.wedding-message::after{content:" ♥";color:#71d6a6}@media(max-width:800px){.wedding-message{font-size:18px;padding:16px}}
