@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "mode": "research_and_paper_only",
+  "live_trading": false,
+  "allow_external_orders": false,
+  "allow_wallet_signing": false,
+  "allow_withdrawals": false,
+  "allow_policy_self_modification": false,
+  "allowed_roles": [
+    "JARVIS",
+    "FETCH",
+    "VISION",
+    "FRIDAY",
+    "ULTRON",
+    "EDITH",
+    "WATCHDOG",
+    "GATEKEEPER"
+  ]
+}
