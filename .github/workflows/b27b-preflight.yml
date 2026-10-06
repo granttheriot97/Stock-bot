@@ -1,0 +1,23 @@
+name: B27B Preflight
+on:
+  push:
+    branches: [b27b-multi-strategy-research]
+  pull_request:
+    branches: [b27b-multi-strategy-research]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Python syntax and B27B invariants
+        run: python research/preflight.py
+      - name: Dashboard JavaScript syntax
+        run: node --check research_dashboard/app.js
+      - name: Compile research modules
+        run: python -m compileall -q research research_service.py

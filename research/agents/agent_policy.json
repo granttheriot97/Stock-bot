@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "fail_closed": true,
+  "global_forbidden": [
+    "brokerage_access",
+    "place_orders",
+    "live_trading",
+    "modify_protocol",
+    "modify_validation_gates",
+    "self_modify",
+    "github_write",
+    "render_write"
+  ],
+  "agents": {
+    "FETCH": {
+      "allowed": [
+        "fetch_market_data",
+        "resume_fetch",
+        "emit_report"
+      ]
+    },
+    "FRIDAY": {
+      "allowed": [
+        "read_findings",
+        "write_repair_proposal"
+      ]
+    },
+    "VISION": {
+      "allowed": [
+        "run_approved_experiment",
+        "emit_results"
+      ]
+    },
+    "ULTRON": {
+      "allowed": [
+        "design_adversarial_tests",
+        "run_approved_adversarial_tests",
+        "emit_test_report"
+      ]
+    },
+    "EDITH": {
+      "allowed": [
+        "append_experiment_record",
+        "read_last_hash"
+      ]
+    },
+    "WATCHDOG": {
+      "allowed": [
+        "read_checkpoint_state",
+        "emit_health_report"
+      ]
+    },
+    "GATEKEEPER": {
+      "allowed": [
+        "read_evidence",
+        "block_or_pass_research_gate"
+      ]
+    }
+  },
+  "live_authorization": false,
+  "agent_may_approve_own_changes": false,
+  "agent_may_change_policy": false
+}
