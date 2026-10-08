@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-10-08T06:44:50.070445+00:00",
+  "mode": "paper-only",
+  "frozen_threshold": 0.01,
+  "markets_covered": 358,
+  "archived_observations": 10356,
+  "qualifying_signals": 0,
+  "rejected": 10356,
+  "confirmed_fills": 0,
+  "unfilled_orders": 0,
+  "paper_locked_net_pnl": 0,
+  "health_snapshots": 417,
+  "estimated_coverage_ratio": 0.2067,
+  "coverage_note": "Estimate from scheduled health checkpoints; intervals above five minutes are treated as downtime.",
+  "warning": "Paper results and replay statistics do not establish future profitability."
+}
