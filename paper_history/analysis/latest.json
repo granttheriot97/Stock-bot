@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-11-14T13:40:48.700291+00:00",
+  "generated_at": "2026-11-15T14:08:01.286231+00:00",
   "frozen_live_threshold": 0.01,
-  "observations": 13549,
-  "markets": 1194,
+  "observations": 13553,
+  "markets": 1198,
   "qualifying": 0,
-  "rejected": 13549,
+  "rejected": 13553,
   "edge": {
     "mean": -0.010655,
     "median": -0.01,
@@ -13,19 +13,19 @@
   },
   "market_timing": {
     "first_5m": {
-      "observations": 3146,
+      "observations": 3148,
       "qualifying": 0,
       "mean_edge": -0.010337,
       "best_edge": -0.01
     },
     "middle_5m": {
-      "observations": 5960,
+      "observations": 5961,
       "qualifying": 0,
       "mean_edge": -0.010465,
       "best_edge": -0.01
     },
     "last_5m": {
-      "observations": 4435,
+      "observations": 4436,
       "qualifying": 0,
       "mean_edge": -0.011136,
       "best_edge": -0.01
